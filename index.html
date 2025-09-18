@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-M" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>小说创作选择模拟器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+        background-color: #020617; /* slate-950 */
+        background-image: radial-gradient(at 27% 37%, hsla(215, 98%, 61%, 0.1) 0px, transparent 50%),
+                          radial-gradient(at 97% 21%, hsla(165, 98%, 61%, 0.1) 0px, transparent 50%),
+                          radial-gradient(at 52% 99%, hsla(355, 98%, 61%, 0.1) 0px, transparent 50%),
+                          radial-gradient(at 10% 29%, hsla(255, 98%, 61%, 0.1) 0px, transparent 50%),
+                          radial-gradient(at 97% 96%, hsla(38, 98%, 61%, 0.1) 0px, transparent 50%),
+                          radial-gradient(at 33% 50%, hsla(222, 98%, 61%, 0.1) 0px, transparent 50%),
+                          radial-gradient(at 79% 53%, hsla(343, 98%, 61%, 0.1) 0px, transparent 50%);
+      }
+      
+      /* Custom Glassmorphism Styles */
+      .glass-card {
+        background: rgba(15, 23, 42, 0.4); /* slate-900/40 */
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+      }
+      
+      .glass-interactive:hover {
+        background: rgba(30, 41, 59, 0.6); /* slate-800/60 */
+        border: 1px solid rgba(255, 255, 255, 0.25);
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.2);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(71, 85, 105, 0.5); /* slate-600/50 */
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(100, 116, 139, 0.7); /* slate-500/70 */
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^18.2.0/",
+    "react/": "https://esm.sh/react@^18.2.0/",
+    "react": "https://esm.sh/react@^18.2.0",
+    "@google/genai": "https://esm.sh/@google/genai@^0.12.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-slate-950 text-slate-200">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
