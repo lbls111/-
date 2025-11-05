@@ -318,7 +318,9 @@ const App: React.FC = () => {
         addLog("创作计划生成成功。", 'success');
         
         try {
-            const titles = await generateChapterTitles(finalOutline, [], storyOptions);
+            // FIX: The `generateChapterTitles` function returns an object with a `titles` property.
+            const response = await generateChapterTitles(finalOutline, [], storyOptions);
+            const titles = response.titles;
             setGeneratedTitles(titles);
             addLog(`已自动生成 ${titles.length} 个初始章节标题。`, 'info');
         } catch(e: any) {
@@ -377,22 +379,15 @@ const App: React.FC = () => {
             // STEP 2: PLAN
             setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'running' } : s));
             const planningCore = `### 原始创意\n${coreToUse}\n\n### AI研究与分析报告\n${researchText}`;
-            const planResponse = await generateStoryOutline(planningCore, storyOptions);
-            const planText = planResponse.text;
-            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'complete', content: planText } : s));
+            const finalOutline = await generateStoryOutline(planningCore, storyOptions);
+            
+            // Assuming generateStoryOutline returns the parsed JSON object directly.
+            // We'll wrap it in a text-like structure for display.
+            const planText = JSON.stringify(finalOutline, null, 2);
+            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'complete', content: `[START_OUTLINE_JSON]\n${planText}\n[END_OUTLINE_JSON]` } : s));
 
-            try {
-                const finalOutline = extractAndParseJson<StoryOutline>(
-                    planText,
-                    '\\[START_OUTLINE_JSON\\]',
-                    '\\[END_OUTLINE_JSON\\]',
-                    initialSteps[1].title
-                );
-                await handlePlanningSuccess(finalOutline);
-            } catch (assemblyError: any) {
-                console.error("组装创作计划时出错:", assemblyError);
-                handleError(`组装创作计划失败: ${assemblyError.message}`, 1);
-            }
+            await handlePlanningSuccess(finalOutline);
+
         } catch (e: any) {
             console.error("AI代理规划步骤失败。", e);
             if (e instanceof Error) handleError(e.message, 1);

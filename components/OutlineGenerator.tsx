@@ -204,8 +204,9 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setError(null);
         setActiveOutlineTitle(null);
         try {
-            const titles = await generateChapterTitles(storyOutline, chapters, storyOptions);
-            setGeneratedTitles(prev => [...prev, ...titles]);
+            // FIX: The `generateChapterTitles` function returns an object with a `titles` property.
+            const response = await generateChapterTitles(storyOutline, chapters, storyOptions);
+            setGeneratedTitles(prev => [...prev, ...response.titles]);
         } catch (e: any) {
             setError(e.message || "生成章节标题时发生未知错误。");
         } finally {
