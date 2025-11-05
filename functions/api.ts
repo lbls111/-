@@ -1,28 +1,34 @@
-// This is a Cloudflare Pages Function that acts as a secure backend proxy
-// for any OpenAI-compatible API.
+// This is a Cloudflare Pages Function that acts as a secure backend.
+// It is "bimodal":
+// 1. If a custom API URL/Key is provided, it acts as a secure proxy.
+// 2. If not, it uses the built-in Google Gemini SDK with the environment's API_KEY.
 
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, WorldCategory } from '../types';
+import { GoogleGenAI } from '@google/genai';
+import {
+  getStoryOutlinePrompts,
+  getChapterPrompts,
+  getChapterTitlesPrompts,
+  getDetailedOutlinePrompts,
+  getRefineDetailedOutlinePrompts,
+  getEditChapterTextPrompts,
+  getCharacterInteractionPrompts,
+  getNewCharacterProfilePrompts,
+} from './prompts';
+
+import type { StoryOptions } from '../types';
 
 interface PagesFunctionContext {
   request: Request;
-  env: {}; // We no longer use env variables for the key.
+  env: {
+    API_KEY?: string;
+  };
 }
 
-// Helper to transform our complex prompts into a standard OpenAI messages array
-function createMessages(systemPrompt: string, userPrompt: string): { role: string; content: string }[] {
-    return [
-        {
-            role: "system",
-            content: systemPrompt,
-        },
-        {
-            role: "user",
-            content: userPrompt,
-        },
-    ];
-}
+// =================================================================
+// == CUSTOM OPENAI-COMPATIBLE API HELPERS
+// =================================================================
 
-// Helper to forward the request and handle the SSE stream from the custom API
+// Helper to forward the request and handle the SSE stream from a custom API
 async function streamOpenAIResponse(
     apiUrl: string,
     apiKey: string,
@@ -37,28 +43,19 @@ async function streamOpenAIResponse(
     try {
         const response = await fetch(new URL('/v1/chat/completions', apiUrl), {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
             body: JSON.stringify({
-                model: model,
-                messages: messages,
+                model,
+                messages,
                 stream: true,
                 temperature: options.temperature,
-                top_p: (options.diversity - 0.1) / 2.0, // Remap diversity to top_p
-                top_k: options.topK > 0 ? options.topK : undefined, // Some models don't support top_k
+                top_p: (options.diversity - 0.1) / 2.0,
+                top_k: options.topK > 0 ? options.topK : undefined,
             }),
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Upstream API Error: ${response.status} - ${errorText}`);
-        }
-
-        if (!response.body) {
-            throw new Error("Upstream API response has no body.");
-        }
+        if (!response.ok) throw new Error(`Upstream API Error: ${response.status} - ${await response.text()}`);
+        if (!response.body) throw new Error("Upstream API response has no body.");
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -75,126 +72,187 @@ async function streamOpenAIResponse(
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     const data = line.substring(6);
-                    if (data.trim() === '[DONE]') {
-                        break;
-                    }
+                    if (data.trim() === '[DONE]') break;
                     try {
                         const parsed = JSON.parse(data);
                         const delta = parsed.choices[0]?.delta?.content;
                         if (delta) {
-                            // The frontend expects a specific JSON format with a `text` property
-                            const chunk = JSON.stringify({ text: delta }) + '\n';
-                            await writer.write(encoder.encode(chunk));
+                            await writer.write(encoder.encode(JSON.stringify({ text: delta }) + '\n'));
                         }
-                    } catch (e) {
-                        console.error("Error parsing upstream SSE chunk:", data, e);
-                    }
+                    } catch (e) { /* Ignore parsing errors for incomplete chunks */ }
                 }
             }
         }
     } catch (e: any) {
-        console.error('Error during OpenAI stream proxying:', e);
-        const errorChunk = JSON.stringify({ error: e.message }) + '\n';
-        await writer.write(encoder.encode(errorChunk));
+        await writer.write(encoder.encode(JSON.stringify({ error: e.message }) + '\n'));
     } finally {
         await writer.close();
     }
 }
 
+// Helper for non-streaming requests to a custom API
+async function postOpenAIRequest(
+    apiUrl: string, apiKey: string, model: string, messages: { role: string; content: string }[], options: StoryOptions
+): Promise<string> {
+    const response = await fetch(new URL('/v1/chat/completions', apiUrl), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+            model,
+            messages,
+            stream: false,
+            temperature: options.temperature,
+            top_p: (options.diversity - 0.1) / 2.0,
+            top_k: options.topK > 0 ? options.topK : undefined,
+        }),
+    });
 
-// ... (The large prompt generation functions like getAuthorStyleInstructions would go here) ...
-// For brevity, they are omitted but are identical to the previous version.
-const getAuthorStyleInstructions = (style: any): string => {
-    // This function remains the same as in the previous version.
-    // ...
-    return `## 人格设定：【电影导演】...`; // Default case
+    if (!response.ok) throw new Error(`Upstream API Error: ${response.status} - ${await response.text()}`);
+    
+    const data = await response.json();
+    const content = data.choices[0]?.message?.content;
+    if (!content) throw new Error("Upstream API returned an empty response.");
+    return content;
 }
 
+// =================================================================
+// == DEFAULT GEMINI SDK HELPERS
+// =================================================================
 
-// The main API handler
+// Helper for streaming responses from the Gemini API
+async function streamGeminiResponse(
+    ai: GoogleGenAI, model: string, prompt: string, writable: WritableStream
+) {
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+    try {
+        const stream = await ai.models.generateContentStream({ model, contents: prompt });
+        for await (const chunk of stream) {
+            const text = chunk.text;
+            if (text) {
+                 await writer.write(encoder.encode(JSON.stringify({ text }) + '\n'));
+            }
+        }
+    } catch (e: any) {
+        await writer.write(encoder.encode(JSON.stringify({ error: e.message }) + '\n'));
+    } finally {
+        await writer.close();
+    }
+}
+
+// Helper for non-streaming requests to the Gemini API
+async function postGeminiRequest(ai: GoogleGenAI, model: string, prompt: string): Promise<string> {
+    const response = await ai.models.generateContent({ model, contents: prompt });
+    return response.text;
+}
+
+// =================================================================
+// == MAIN API HANDLER
+// =================================================================
+
 export const onRequestPost: (context: PagesFunctionContext) => Promise<Response> = async (context) => {
-    const { request } = context;
+    const { request, env } = context;
     
     try {
         const { action, payload } = await request.json();
+        const { options, ...restPayload } = payload;
 
-        // New action to list models from the custom endpoint
+        const isCustomApi = options && options.apiBaseUrl && options.apiKey;
+
+        // Handle 'listModels' action separately as it's always custom
         if (action === 'listModels') {
-            const { options } = payload;
-            if (!options.apiBaseUrl || !options.apiKey) {
-                return new Response(JSON.stringify({ error: "API Base URL and API Key are required." }), { status: 400 });
+            if (!isCustomApi) { // In default mode, provide default models
+                return new Response(JSON.stringify(['gemini-2.5-pro', 'gemini-2.5-flash']), { headers: { 'Content-Type': 'application/json' } });
             }
-
-            const modelResponse = await fetch(new URL('/v1/models', options.apiBaseUrl), {
-                headers: {
-                    'Authorization': `Bearer ${options.apiKey}`,
-                }
-            });
-
-            if (!modelResponse.ok) {
-                const errorText = await modelResponse.text();
-                throw new Error(`Failed to fetch models: ${modelResponse.status} - ${errorText}`);
-            }
-
+            const modelResponse = await fetch(new URL('/v1/models', options.apiBaseUrl), { headers: { 'Authorization': `Bearer ${options.apiKey}` }});
+            if (!modelResponse.ok) throw new Error(`Failed to fetch models: ${modelResponse.status} - ${await modelResponse.text()}`);
             const modelData = await modelResponse.json();
             const modelIds = modelData.data.map((m: any) => m.id).sort();
-
-            return new Response(JSON.stringify(modelIds), {
-                headers: { 'Content-Type': 'application/json' },
-            });
+            return new Response(JSON.stringify(modelIds), { headers: { 'Content-Type': 'application/json' }});
         }
         
-        // All other actions now act as proxies
-        const { options } = payload;
-        if (!options.apiBaseUrl || !options.apiKey) {
-            return new Response(JSON.stringify({ error: "API configuration is missing." }), { status: 400 });
+        // Prepare Gemini AI instance for default mode
+        const ai = isCustomApi ? null : new GoogleGenAI({ apiKey: env.API_KEY || '' });
+        if (!isCustomApi && !env.API_KEY) {
+            throw new Error("AI Studio Mode Error: The API_KEY environment variable is not set.");
         }
-        
-        let systemPrompt = "";
-        let userPrompt = "";
-        let model = "";
 
+
+        let prompt: string | { role: string; content: string }[] = '';
+        let model: string = '';
+        let isStreaming = false;
+        
         switch (action) {
-            case 'generateStoryOutline': {
-                const { storyCore } = payload;
-                model = options.planningModel;
-                systemPrompt = `You are an AI story writing expert. Your task is to generate a complete, structured novel plan in a single JSON object. Follow the user's instructions precisely. The JSON must be wrapped with [START_OUTLINE_JSON] and [END_OUTLINE_JSON].`;
-                // A simplified version of the huge prompt for demonstration
-                userPrompt = `Core Idea: "${storyCore}"\nStyle: ${options.style}\nLength: ${options.length}\nAuthor Style: ${options.authorStyle}\n\nPlease generate the full story outline based on these requirements.`;
+            case 'generateStoryOutline':
+                isStreaming = true;
+                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
+                prompt = getStoryOutlinePrompts(restPayload.storyCore, options, isCustomApi);
                 break;
-            }
-            case 'generateChapter': {
-                 const { outline, historyChapters, detailedChapterOutline } = payload;
-                 model = options.writingModel;
-                 
-                 const history = historyChapters.map((c: GeneratedChapter) => `### ${c.title}\n${c.content}`).join('\n\n---\n\n');
-                 const characterString = outline.characters.map((c: CharacterProfile) => `${c.name}: ${c.coreConcept}`).join('; ');
-                 
-                 systemPrompt = `You are a world-class author, ghostwriting in the style of ${options.authorStyle}. You must follow the provided detailed outline precisely. Your output format is critical: start with [START_THOUGHT_PROCESS], write your plan, then [START_CHAPTER_CONTENT], followed by the chapter title and content.`;
-                 userPrompt = `Story Synopsis: ${outline.plotSynopsis}\nCharacters: ${characterString}\nPrevious Chapters:\n${history}\n\nTHIS CHAPTER'S DETAILED OUTLINE (MUST FOLLOW):\n${JSON.stringify(detailedChapterOutline, null, 2)}\n\nForbidden Words: ${options.forbiddenWords.join(', ')}\n\nNow, write the next chapter.`;
+            case 'generateChapter':
+                isStreaming = true;
+                model = isCustomApi ? options.writingModel : 'gemini-2.5-pro';
+                prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline, isCustomApi);
+                break;
+            case 'generateChapterTitles':
+                isStreaming = false;
+                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
+                prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options, isCustomApi);
+                break;
+            case 'generateDetailedOutline':
+                isStreaming = true;
+                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
+                prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, restPayload.userInput, options, restPayload.iterationConfig, isCustomApi);
+                break;
+            case 'refineDetailedOutline':
+                 isStreaming = true;
+                 model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
+                 prompt = getRefineDetailedOutlinePrompts(restPayload.originalOutlineJson, restPayload.refinementRequest, restPayload.chapterTitle, restPayload.storyOutline, options, restPayload.iterationConfig, isCustomApi);
                  break;
-            }
-            // ... Add cases for all other actions, building the system/user prompts similarly.
-            
+            case 'editChapterText':
+                isStreaming = false;
+                model = isCustomApi ? options.writingModel : 'gemini-2.5-pro';
+                prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options, isCustomApi);
+                break;
+            case 'generateCharacterInteraction':
+                isStreaming = true;
+                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
+                prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options, isCustomApi);
+                break;
+            case 'generateNewCharacterProfile':
+                isStreaming = false;
+                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
+                prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options, isCustomApi);
+                break;
             default:
-                return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
-                    status: 400,
-                    headers: { 'Content-Type': 'application/json' },
-                });
+                throw new Error(`Unknown action: ${action}`);
         }
 
-        const messages = createMessages(systemPrompt, userPrompt);
-        const { readable, writable } = new TransformStream();
-        
-        // We start the streaming in the background but return the readable stream immediately.
-        streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, messages, options, writable);
-
-        return new Response(readable, {
-            headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' },
-        });
+        // --- Execute and Respond ---
+        if (isStreaming) {
+            const { readable, writable } = new TransformStream();
+            if (isCustomApi) {
+                streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt as { role: string; content: string }[], options, writable);
+            } else {
+                streamGeminiResponse(ai!, model, prompt as string, writable);
+            }
+            return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
+        } else {
+            let resultText: string;
+            if (isCustomApi) {
+                resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt as { role: string; content: string }[], options);
+            } else {
+                resultText = await postGeminiRequest(ai!, model, prompt as string);
+            }
+            // Frontend expects a specific object structure for some non-streaming calls
+            let responseBody;
+            if (action === 'generateChapterTitles') responseBody = { titlesJson: resultText };
+            else if (action === 'editChapterText' || action === 'generateNewCharacterProfile') responseBody = { text: resultText };
+            else responseBody = resultText;
+            
+            return new Response(JSON.stringify(responseBody), { headers: { 'Content-Type': 'application/json' }});
+        }
 
     } catch (e: any) {
-        console.error(`Error in API function:`, e);
         return new Response(JSON.stringify({ error: e.message || "An unknown error occurred" }), {
             status: 500,
             headers: { 'Content-Type': 'application/json' },
