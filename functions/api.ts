@@ -355,8 +355,42 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         }
 
     } catch (e: any) {
-        return new Response(JSON.stringify({ error: e.message || "An unknown error occurred" }), {
-            status: 500,
+        let status = 500;
+        let message = e.message || "An unknown error occurred";
+
+        const upstreamMatch = message.match(/Upstream API Error: (\d+)/);
+        if (upstreamMatch && upstreamMatch[1]) {
+            const upstreamStatus = parseInt(upstreamMatch[1], 10);
+            const rawUpstreamBody = message.substring(message.indexOf('-') + 1).trim();
+            
+            if (upstreamStatus === 504 || upstreamStatus === 524) {
+                message = "AI模型响应超时 (Gateway Timeout)。这通常在处理复杂请求（如生成多轮优化的细纲）时发生。建议：\n1. 在“细纲”设置中减少“最大优化次数”。\n2. 在系统设置中更换一个更快的模型（如Flash模型）用于规划。";
+                status = 504; // Pass through the timeout status
+            } else if (upstreamStatus === 401) {
+                message = "API密钥无效或未授权。请在设置中检查您的API密钥。";
+                status = 401;
+            } else if (upstreamStatus === 429) {
+                 message = "已达到API速率限制 (Rate Limit Exceeded)。请稍后重试或检查您的API账户用量。";
+                 status = 429;
+            } else if (upstreamStatus === 400) {
+                let upstreamError = "上游API报告了一个请求错误。";
+                try {
+                   const errJson = JSON.parse(rawUpstreamBody);
+                   upstreamError = errJson.error?.message || rawUpstreamBody;
+                } catch {}
+                 message = `请求错误 (Bad Request): ${upstreamError}`;
+                 status = 400;
+            } else {
+                // Generic upstream server error
+                message = `上游API服务器错误 (状态码: ${upstreamStatus})。请稍后重试。`;
+                status = upstreamStatus >= 500 ? 502 : 500;
+            }
+        } else if (message.includes("AI Studio Mode Error")) {
+            status = 400; // Bad Request
+        }
+        
+        return new Response(JSON.stringify({ error: message }), {
+            status,
             headers: { 'Content-Type': 'application/json' },
         });
     }
