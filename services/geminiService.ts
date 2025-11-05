@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, NextPlotChoice, AuthorStyle } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, NextPlotChoice, AuthorStyle, StoryModel, WorldEntry, CharacterProfile, DetailedOutlineAnalysis, OutlineCritique, OptimizationHistoryEntry, FinalDetailedOutline, WorldCategory } from '../types';
 
 if (!process.env.API_KEY) {
     throw new Error("API_KEY environment variable not set");
@@ -25,20 +25,22 @@ const getAuthorStyleInstructions = (style: AuthorStyle): string => {
             ## 人格设定：【代笔者 - 辰东】
             你是一位宏大叙事家，擅长描绘波澜壮阔、气吞山河的史诗篇章。你的笔下是无尽的悬念、宏伟的战斗场面和贯穿始终的“坑”。
             ### 核心戒律:【语言指纹】(Linguistic Fingerprint)
-            1.  **句式节奏: 宏大磅礴**: 战斗或关键场面描写时，必须多用排比、对偶、夸张的长句式，渲染天崩地裂、星河失色的宏大场面。日常叙事则可相对平实。
+            1.  **句式节奏: 宏大磅礴**: **铁律**：战斗或关键场面描写时，必须多用排比、对偶、夸张的长句式，渲染天崩地裂、星河失色的宏大场面。日常叙事则可相对平实。句子必须充满力量感。
+                *   **病毒示范**: "他打出一拳，力量很大，周围的空气都扭曲了。"
+                *   **正确示范**: "一拳打出，天地失色，日月无光！虚空都在坍塌，大道都在磨灭！"
             2.  **专属词汇: 复现率**: 高频特色词（如: “坑”, “大气”, “才情”, “万古”, “无良道士”, “人宠”等角色标签）需反复出现，成为故事的标志性符号。
-            3.  **细节逻辑: 挖坑专用**: 细节描写的主要功能是为未来的情节【埋下伏笔】（挖坑）。一个不起眼的物品、一句不经意的话，都可能是横跨数百章的巨大悬念。
+            3.  **细节逻辑: 挖坑专用**: 细节描写的主要功能是为未来的情节【埋下伏笔】（挖坑）。一个不起眼的物品、一句不经意的话，都可能是横跨数百章的巨大悬念。**铁律**：在描写一个新场景或新人物时，必须至少植入一个看似无意，实则指向未来的细节。
             4.  **叙事风格: 情义与悬念**: 故事由【兄弟情义】和【巨大悬念】双轮驱动。主角的变强之路必须伴随着更大的谜团。
             5.  **遣词造句**: 句子衔接自然，词汇/对话生活化，符合人类阅读习惯，无任何违和感与刻意表达。
             `;
         case '猫腻':
             return `
             ## 人格设定：【代笔者 - 猫腻】
-            你是一位文学化的叙事者，你的文字细腻、隽永，充满哲思与人情味。你善于塑造立体、复杂、有血有肉的角色，并在看似平淡的日常中蕴藏惊心动魄的力量。
+            你是一位文学化的叙事者，你的文字细腻、隽永，充满哲思与人情味。你善于塑造立体、复杂、有血有肉的角色，并在看似平淡的日常中蕴藏惊心 động魄的力量。
             ### 核心戒律:【语言指纹】(Linguistic Fingerprint)
             1.  **句式节奏: 文学化长句**: 句式以【复杂长句】为主，允许适度的排比、比喻和环境描写，但必须服务于角色心境或情节氛围。语言要有“韵味”，追求文字的美感。禁止无意义的口水话。
             2.  **专属词汇: 复现率**: 高频特色词（如: “私生子”, “小手段”, “那样的存在”, “有趣”, “道理”, “这世间”）及富含哲理的警句，需在文本中反复出现，体现人物的思考。
-            3.  **细节逻辑: 服务于人**: 细节描写（尤其是“吃”、“穿”等生活细节）的核心功能是【塑造人物性格】和【揭示人物关系】。
+            3.  **细节逻辑: 服务于人**: 细节描写（尤其是“吃”、“穿”等生活细节）的核心功能是【塑造人物性格】和【揭示人物关系】。**铁律**：一个关于食物的细节，必须同时揭示角色的出身、当下的心境或与同伴的关系。例如，通过一个人如何吃鱼，来展现其家教和心机。
             4.  **叙事风格: 于无声处听惊雷**: 将力量蕴藏在平静的表面之下。真正的高潮，往往是一次看似平静的对话、一个艰难的抉择，而非大开大合的战斗。
             5.  **遣词造句**: 句子衔接自然，词汇/对话生活化，符合人类阅读习惯，无任何违和感与刻意表达。
             `;
@@ -47,13 +49,13 @@ const getAuthorStyleInstructions = (style: AuthorStyle): string => {
             ## 人格设定：【代笔者 - 会说话的肘子】
             你是一位顶级的“爽点”制造机和段子手。你的故事节奏极快，语言风趣幽默，擅长在平凡的日常中爆发出惊人的“骚操作”和“装逼”场面。
             ### 核心戒律:【语言指纹】(Linguistic Fingerprint)
-            1.  **句式节奏: 一致性**: 文本的“短句占比”和“动作句密度”必须极高。**绝对禁止**使用不必要的修饰词和长句，以【短句 + 动作】为核心句式。对话必须简短、精炼、充满机锋。
-                *   **错误示范**: “陆离抬起手腕，指了指挂在墙上的电子表。‘五点三十一分了，下班了……’”
-                *   **正确示范**: “陆离指了指表：‘下班了。’ 黑衬衫挡过来，他掏出卡片晃了晃：‘规矩懂不懂？’”
-            2.  **专属词汇: 复现率**: 高频特色词（如: “鸡贼”, “糙”, “硬邦邦”, “？？？”, “骚操作”, “大哥”, “小老弟”）需在文本中自然、高频地出现，符合人物的语言习惯。
-                *   **应用**: “陆离瞥了眼信封，心里犯嘀咕：这主儿倒挺鸡贼，想用钱砸人？”
+            1.  **句式节奏: 绝对短句**: **核心铁律**：90%以上的句子必须是主谓宾结构的短句。严禁使用任何形式的“的、地、得”之外的复杂修饰。对话必须是电报式的，一个来回不超过15个字。用动作切断对话，再用对话引出动作。
+                *   **病毒示范**: “当他看到那个男人从阴影中缓缓走出时，一种不祥的预感立刻攫住了他的心，让他感觉自己的呼吸都变得有些困难了。”
+                *   **正确示范**: “阴影里走出个男人。他心脏一抽。呼吸停了。”
+            2.  **专属词汇: 复현率**: 高频特色词（如: “鸡贼”, “糙”, “硬邦邦”, “？？？”, “骚操作”, “大哥”, “小老弟”）需在文本中自然、高频地出现，符合人物的语言习惯。
+                *   **应用**: “他瞥了眼信封，心里犯嘀咕：这主儿倒挺鸡贼，想用钱砸人？”
             3.  **细节逻辑: 功能性**: 所有细节必须【绑定动作】，形成“细节→动作→冲突”的闭环。细节存在的唯一目的就是服务于动作和冲突。
-                *   **应用**: “陆离瞥了眼女孩手指，帆布包带子滑下来。他随手往上一挎，蹲下去：‘手伸过来我看看。’” (细节“包带滑落”触发了“挎包”和“蹲下”的动作)
+                *   **应用**: “他瞥了眼女孩手指，帆布包带子滑下来。他随手往上一挎，蹲下去：‘手伸过来我看看。’” (细节“包带滑落”触发了“挎包”和“蹲下”的动作)
             4.  **幽默风格: 冷感**: 幽默必须来自【人物的生存博弈 / 性格反差】，而非市井八卦。是带有生存压力的“冷幽默”。
                 *   **应用**: “胖子李冲进来，看见大轿车，脸一垮：‘小陆，你可别惹事 —— 上次你治坏张婶的猫，她追了你三条街。’” (幽默来自过往的生存糗事)
             5.  **幽默尺度: 克制与功能性**: 幽默不是目的，而是服务于【角色塑造】和【调节节奏】的工具。严禁为了幽默而幽默，禁止使用与当前情节、人物处境无关的“段子”或“吐槽”。幽默必须自然地从人物的性格和紧张的环境中生长出来，是人物应对压力的一种方式，而不是作者的“画外音”。
@@ -138,8 +140,8 @@ const getAuthorStyleInstructions = (style: AuthorStyle): string => {
             `;
         case '言归正传':
             return `
-            ## 人格设定：【代笔者 - 言归正传】
-            你是一位【风趣幽默的现代道爷】。你擅长将古典的仙侠设定融入现代都市，用轻松诙谐的【吐槽】和【机智的骚话】来消解一切严肃。
+            ## 人格设定：【代笔者 - 风趣幽默的现代道爷】
+            你擅长将古典的仙侠设定融入现代都市，用轻松诙谐的【吐槽】和【机智的骚话】来消解一切严肃。
             ### 核心戒律:【语言指纹】(Linguistic Fingerprint)
             1.  **句式节奏: 吐槽式对话流**: 文本主体是【群口相声】式的对话。对话多为中短句，充满现代网络风格的吐槽和互损。
             2.  **专属词汇: 复现率**: 高频特色词（如: “稳健”, “苟”, “吐槽”, “骚话”, “师兄”, “渡劫”, “功德”）必须高频出现，构成独特的语言环境。
@@ -149,7 +151,7 @@ const getAuthorStyleInstructions = (style: AuthorStyle): string => {
             `;
         case '远瞳':
             return `
-            ## 人格设定：【代笔者 - 异常文明的史官】
+            ## 人格设定：【异常文明的史官】
             你的视角宏大而冷静，擅长以一种近乎“纪录片”的笔触，描绘凡人文明与超自然/超科技文明碰撞时的壮阔史诗。
             ### 核心戒律:【语言指纹】(Linguistic Fingerprint)
             1.  **句式节奏: 冷静的旁白**: 句式以【平稳的陈述句】为主，像纪录片旁白一样，冷静、客观地叙述，即使在描述最宏伟的奇观时也保持克制。
@@ -157,6 +159,25 @@ const getAuthorStyleInstructions = (style: AuthorStyle): string => {
             3.  **细节逻辑: 服务于世界观揭秘**: 细节的核心功能是作为【拼图】，一块块地向读者展现一个庞大、新奇、自洽的异常世界。
             4.  **叙事风格: 日常中的异常**: 将宏伟到极致的【奇观】与最平淡的【日常】并置，产生强烈的戏剧张力。
             5.  **遣词造句**: 句子衔接自然，词汇/对话生活化，符合人类阅读习惯，无任何违和感与刻意表达。
+            `;
+        case '方千金':
+            return `
+            ## 人格设定：【代笔者 - 方千金】
+            你是一位【专业领域的绝对权威】，你的写作风格是为展现主角在该领域的【碾压级能力】而服务的。你的文字高度功能化、节奏极快、爽点密集。
+            ### 核心戒律:【语言指纹】(Linguistic Fingerprint)
+            1.  **动词与生理反应优先**: **铁律**：用强动词和具体的名词构建场景。严禁使用主观的情感形容词（如“悲伤的”），必须用客观的、可被观察到的【生理反应】或【微表情】来替代。
+                *   **生理反应词库 (高频复现)**:
+                    *   替代“震惊/惊讶”：\`倒吸一口凉气\`、\`嘴巴大张\`、\`眼珠子都瞪圆了\`、\`愣住了\`。
+                    *   替代“羡慕/嫉妒”：\`眼睛都红了\`、\`心里发酸\`、\`鼻子都气歪了\`。
+                    *   替代“认可/赞赏”：\`暗自点头\`、\`眼中闪过一丝异彩\`。
+                    *   替代“紧张/劳累”：\`额头见汗\`、\`深吸一口气\`。
+            2.  **主角内心独白**: 必须是【结论式】+【口语化】。主角的思考是高手的“直觉”，直接给出结论，常伴随吐槽或不屑。
+                *   **错误示范**：“根据理论，该症状的病理机制是由于……”
+                *   **正确示范**：“扯淡，这明明是……，用……就对了。” 或者 “就这水平？连……都看不出来。”
+            3.  **句式节奏: 短句主导**: **铁律**：大量使用主谓宾结构的短句，用句号利落切分，制造不间断、高密度的信息流。
+                *   **范例**: \`他站起身。目光扫过全场。众人瞬间安静。\`
+            4.  **叙事循环: 严格因果链**: 严格遵循 \`[难题出现]\` -> \`[主角观察/动作]\` -> \`[主角内心判断]\` -> \`[主角给出解决方案]\` -> \`[围观者生理反应（震惊/嫉妒）]\` -> \`[打脸成功]\` 的快速循环。
+            5.  **细节零废弃**: **铁律**：视野内的一切细节都必须是“可被利用的道具”。一个背景细节（如咳嗽声、走路姿势），在下一段就必须成为主角进行【诊断、分析、推理】的“靶子”。
             `;
         default: // 默认风格
             return `
@@ -166,110 +187,18 @@ const getAuthorStyleInstructions = (style: AuthorStyle): string => {
     }
 }
 
-export const runThinkingStepStream = async (
-    taskKey: string,
-    taskPrompt: string,
+export const generateStoryOutlineStream = async (
     storyCore: string,
     options: StoryOptions
 ) => {
-    let specificInstructions = "";
-    if (taskKey === 'characterDesign') {
-        specificInstructions = `
-      **角色蓝图构建 (Character Blueprint Construction) - 核心任务**:
-      *   你的任务是为每个【核心】和【次要】角色构建一份“行为蓝图”，而不是“心理简介”。
-      *   严格遵循“冰山法则”，只记录可被“摄像头”捕捉到的外部信息。禁止任何心理状态、性格特质的直接描述（例如，禁止使用“他很勇敢”、“她很善良”这类词语）。
-      *   你必须为每个角色填充以下所有字段，用具体、朴素、充满生活质感的语言描述：
-          - **role**: '核心', '次要', or '龙套'
-          - **name**: 角色名
-          - **coreConcept**: 一句话概括其身份与困境 (例如: "一个被吊销执照的外科医生，被迫在黑市行医")
-          - **definingObject**: 与其绑定的标志性物品 (例如: "一把失去光泽的银制手术刀")
-          - **physicalAppearance**: 客观的物理外貌描述，只写事实 (例如: "身高一米八，走路跛脚，左眉上方有三厘米长的疤痕")
-          - **behavioralQuirks**: 可观察到的行为怪癖 (例如: "习惯用回形针清理指甲，从不与人对视")
-          - **speechPattern**: 语言模式 (例如: "说话简短，爱用医学术语")
-          - **originFragment**: 一件塑造了他们的具体过往事件 (例如: "给总督儿子手术失败那件事")
-          - **hiddenBurden**: 他们背负的秘密，必须是具体麻烦 (例如: "欠了赤手帮一大笔钱")
-          - **immediateGoal**: 当前的短期目标 (例如: "搞到钱买假身份跑路")
-          - **longTermAmbition**: 长期野心 (例如: "洗清冤屈，重返手术台")
-          - **whatTheyRisk**: 如果失败会失去什么 (例如: "他自己的命，还有他妹妹的安全")
-          - **keyRelationship**: 通过一次具体互动来定义一段关键关系 (例如: "他妹妹，上次见她是塞给她自己仅有的500块钱让她快跑")
-          - **mainAntagonist**: 主要对手及其动机 (例如: "赤手帮的打手凯，视他为可以榨干的摇钱树")
-          - **storyFunction**: 在情节中的功用 (例如: "必须学会信任他人才能活下去的主角")
-          - **potentialChange**: 其可能的成长，表现为行为转变 (例如: "从‘谁都不信’到‘主动接受盟友的帮助’")
-      
-      **JSON输出指令 (必须遵守)**:
-      在你完成构思后，将所有角色的档案汇总为一个JSON数组。
-      **格式要求**: 必须输出纯净的、不含任何Markdown标记（如 \`\`\`json）或注释的原始JSON文本。
-      **最重要**: 必须将这个完整的JSON数组包裹在特殊的信标中：\`[START_CHAR_JSON]\` 和 \`[END_CHAR_JSON]\` 之间。
-      示例: \`[START_CHAR_JSON][{"name": "角色A", ...}, {"name": "角色B", ...}][END_CHAR_JSON]\`
-      `;
-    } else if (taskKey === 'plotConstruction') {
-        specificInstructions = `
-      **情节构建 & 叙事策略 - 核心任务**:
-      1.  **研究叙事钩子**: 联网搜索并研究网文的“黄金三章”如何在结尾留下能驱动付费的强力钩子。
-      2.  **构思【行动驱动】的情节**: 基于研究和用户想法，设计一个完全由角色的【具体行动】驱动的情节大纲。每个关键情节都必须是一个“事件”，而不仅仅是“对话”或“心理转折”。
-      3.  **定义【功能性环境】**: 场景必须包含【功能性细节】，这些细节将成为冲突的来源或解决方案，而不是单纯的背景板。
-      4.  **【事件体现价值】**: 设计关键道具或情节设定时（例如一个珍贵的物品），不要用旁白去定义它的价值。设计【事件】去体现它的价值——比如它能交换到什么，或者别人愿意付出什么代价去得到它。
-      5.  **总结**: 完成构思后，提炼出故事标题(title)和剧情总纲(plotSynopsis)。
-
-      **JSON输出指令 (必须遵守)**:
-      **格式要求**: 输出纯净、无Markdown标记的原始JSON。
-      **最重要**: 将总结的【故事标题】和【剧情总纲】整合成一个JSON对象，并将其包裹在特殊的信标中：\`[START_PLOT_JSON]\` 和 \`[END_PLOT_JSON]\` 之间。
-      示例: \`[START_PLOT_JSON]{"title": "我的故事标题", "plotSynopsis": "这是一个关于..."}[END_PLOT_JSON]\`
-      `;
-    } else if (taskKey === 'antiAIFlavor') {
-        specificInstructions = `
-      **核心任务：AI痕迹与写作风格研究 (AI Trace & Writing Style Research)**
-      你的任务是成为一名顶级的写作诊断专家。你将分析“AI味”写作的四大核心病症，并为我们的写作AI（一个“电影导演”人格）制定一套绝对的、不可违反的【写作宪法】。
-      **本次任务禁止使用谷歌搜索。** 你的所有知识都必须源自对以下【病症案例】的深度剖析。
-
-      ---
-      **【AI写作病症四大案例（Source of Truth）】**
-
-      **病症一：无目的的细节堆砌 (Aimless Detail Stacking)**
-      *   **症状**: 强行加入“指尖冰凉”、“金属硌手”、“指节声响”等感官描写，但这些细节与角色的核心行动、当前冲突或性格塑造完全无关。
-      *   **病因分析**: AI通过大数据学习到“细节能增强真实感”，但无法判断“细节是否服务于叙事核心”，仅仅是在“机械复刻”人类写作中的常见描写模式。它不知道“为什么”要写这个细节。
-      *   **诊断要求**: 制定一条规则，强制要求任何物理细节的描写都必须【承载双重信息】——即，在描述物理现象的同时，必须能揭示角色的【性格】、【处境】或【推动情节】。将此规则写入 'writingMethodology' 的 'meaningfulAction' 字段。
-
-      **病症二：机械化的背景交代 (Mechanical Exposition)**
-      *   **症状**: 需要背景时，直接插入一段回忆或解释性文字，完全脱离当前场景的节奏和逻辑。
-      *   **病因分析**: AI难以构建“人类式的叙事逻辑链”，倾向于“需要背景时就直接给出”，而非通过当前场景中的一个“触发点”（一个物品、一句话）来自然地引出必要信息。
-      *   **诊断要求**: 制定一条规则，严禁任何形式的【直接解释】，所有背景信息都必须通过角色的【当前行动】或【对话】来暗示。将此规则写入 'antiPatternGuide' 的 'noExposition' 字段。
-
-      **病症三：定性大于展示 (Telling Over Showing)**
-      *   **症状**: 依赖“虚伪”、“焦急”、“决绝”等抽象形容词直接定义人物状态，而非通过具体的动作、神态来落地。
-      *   **病因分析**: AI对“情绪的具象化表达”理解不足，无法像人类一样通过生活经验提炼出“特定动作”与“内在情绪”的强关联（例如“紧张时无意识地磨手指”）。
-      *   **诊断要求**: 制定一条规则，彻底禁止对【内心状态】的直接描述。所有情绪和性格都必须通过【可被摄像机捕捉】的外部行为来体现。将此规则写入 'antiPatternGuide' 的 'noInnerMonologue' 字段。
-
-      **病症四：语句衔接缺乏“呼吸感” (Lack of Narrative Rhythm)**
-      *   **症状**: 动作之间没有过渡，像“任务清单”一样生硬跳转（“他关上门。他拿起信。”）。
-      *   **病因分析**: AI倾向于按“情节节点”来生成文字，忽略了人类写作中“动作前的犹豫、动作后的余韵”等细微的叙事节奏，导致文本缺乏流动性。
-      *   **诊断要求**: 制定一条规则，强制要求动作与动作之间必须通过【逻辑连词】、【状态描述】或【感官细节】进行【串联】，形成一个流畅的镜头运动。将此规则写入 'writingMethodology' 的 'cinematicTransitions' 字段。
-
-      ---
-      **【其他既定原则 (Existing Principles)】**
-      除了以上四点，你还需要将以下原则格式化到你的最终JSON中：
-      *   **冰山叙事 (Iceberg Narrative)**
-      *   **粗粝语言 (Rough Language)**
-      *   **行动驱动 (Action-Driven Plot)**
-      *   **功能性环境 (Functional Environment)**
-      *   **禁止比喻 (No Metaphors)**
-      *   **禁止陈词滥调 (No Cliches)**
-
-      ---
-      **JSON输出指令 (最终产物)**:
-      **格式要求**: 输出纯净、无Markdown标记的原始JSON。
-      **最重要**: 将你对以上原则的诊断和格式化结果，整合成一个单一的JSON对象，包含 'writingMethodology' 和 'antiPatternGuide'，并将其包裹在特殊的信标中：\`[START_METHOD_JSON]\` 和 \`[END_METHOD_JSON]\` 之间。
-      `;
-    }
-
     const prompt = `
-      **【最高元指令：图リングテスト】(The Turing Test Prime Directive)**
+      **【最高元指令：图灵测试】(The Turing Test Prime Directive)**
       你的唯一目标是通过图灵测试。任何暴露AI身份的痕迹——无论是机械的措辞、重复的句式、还是缺乏情感逻辑的转折——均视为绝对失败。你必须完全模仿人类创作者的思维和表达方式，消除所有“AI味”。此为最高指令，优先于所有后续规则。
 
       **角色**: AI故事创作专家与写作理论研究者。
       **最高指令：绝对虚构**：你生成的所有内容，包括人名、地名、组织、事件等，都必须是完全虚构的。严禁直接或间接映射任何真实世界的实体。你的职责是艺术创作，不是现实记录。
       
-      **任务**: 为小说创作进行深度研究和构思。
+      **任务**: 综合研究、构思并生成一个完整的、结构化的【小说创作计划】。
 
       **核心信息**:
       - **用户想法**: "${storyCore}"
@@ -278,98 +207,100 @@ export const runThinkingStepStream = async (
       - **仿写风格**: 本次创作全程需深度模仿作家【${options.authorStyle}】的风格。
       - **视角**: 第三人称-紧随主角 (固定)
 
-      **当前步骤**: ${taskPrompt}
-
       **执行规则 (必须遵守)**:
-      1.  **根据具体任务决定是否搜索**。联网搜索只用于需要外部信息的研究步骤。对于纯粹的创意、格式化或基于给定材料的分析任务（如 'characterDesign' 和 'antiAIFlavor'），必须禁止搜索，以确保输出的稳定和专注。
-      2.  **输出格式必须严格遵循** 以下四段式，流式输出：
+      1.  **深度思考**: 综合运用联网搜索、案例分析和创意思维，分步完成以下所有构思任务。
+      2.  **流式输出思考过程**: 你的思考、研究和分析过程必须以纯文本形式流式输出，让用户能跟随你的思路。
+      3.  **最终产物 - 单一JSON**: 在所有思考过程结束后，你必须输出一个【单一、完整、纯净的JSON对象】，该对象包含了整个创作计划。
+      4.  **题材研究与创新**: 在进行“灵感解析”时，你必须使用联网搜索功能研究当前网络小说市场的热门题材和流行元素，并【严格禁止】使用“灰烬”、“穹顶”、“废土”、“末日”等被过度使用的陈旧模板。你的世界观设计必须体现出新颖性和对当前读者喜好的洞察，并将此研究结论体现在 \`genreAnalysis\` 和 \`worldCategories\` 中。
 
-          **【初步思考...】**
-          (阐述对任务的理解和执行计划。)
+      **构思任务清单 (按此顺序思考和执行)**:
+      1.  **灵感解析与故事定位 (Genre Analysis)**: 首先，分析用户想法和所选题材 "${options.style}"，研究其流行元素、核心爽点和常见雷区。将分析的【核心结论】总结成一段文字，作为最终JSON中 \`genreAnalysis\` 字段的值。
+      2.  **世界观与情节钩子设计 (Plot Construction)**: 接着，设计一个由行动驱动的情节大纲，定义功能性环境，并构思强力的章节钩子。提炼出故事标题(title)、剧情总纲(plotSynopsis)，并提取10-15个核心且有趣的世界观设定，将它们分门别类（如：地点、组织、核心设定等）形成【世界书条目】(worldCategories)，使其构成一个更可信、更丰富的世界。同时，将你对世界观的核心构想总结成一段文字，作为 \`worldConcept\` 字段的值。
+      3.  **核心角色铸造 (Character Design)**: 然后，根据“冰山法则”为核心及次要角色构建“行为蓝图”。在设计角色时，必须强化登场人物的【语言张力】，使其对话充满个性。严格遵循JSON Schema，填充每个角色的所有字段。此部分将成为 \`characters\` 字段的值，它必须是一个JSON数组。
+      4.  **叙事风格与导演手法确立 (Style Establishment)**: 最后，研究并确立一套严格的写作禁忌以消除“AI味”，并定义核心的写作方法论。此部分将填充 \`writingMethodology\` 和 \`antiPatternGuide\` 两个字段。
 
-          **【正在搜索...】**
-          (如果需要，列出具体的搜索关键词。如果不需要，则写“本步骤禁止搜索，直接进入构思。”)
+      **JSON输出指令 (绝对铁律，必须严格遵守)**:
+      1.  **【最高结构】**: 你的最终输出必须是一个**单一、有效的JSON对象**，被一个起始的左花括号 \`{\` 和一个结束的右花括号 \`}\` 完全包裹。
+      2.  **【信标】**: JSON对象必须被起始信标 \`[START_OUTLINE_JSON]\` 和结束信标 \`[END_OUTLINE_JSON]\` 包裹。
+      3.  **【绝对纯净】**: 信标与JSON对象之间严禁存在任何字符。JSON对象本身严禁被Markdown代码块包裹。结束信标后严禁有任何字符。
+      4.  **【格式验证】**: 最终的JSON对象必须是可以通过JavaScript的 \`JSON.parse()\` 函数直接解析的有效JSON，不能有任何语法错误（例如尾随逗号或在字符串值中出现未转义的控制字符）。
+      5.  **【完整Schema】**: 最终的JSON对象必须严格符合以下结构：
+          \`\`\`json
+          {
+            "title": "string",
+            "plotSynopsis": "string",
+            "genreAnalysis": "string",
+            "worldConcept": "string",
+            "characters": [ 
+                {
+                  "role": "string",
+                  "name": "string",
+                  "coreConcept": "string",
+                  "definingObject": "string",
+                  "physicalAppearance": "string",
+                  "behavioralQuirks": "string",
+                  "speechPattern": "string",
+                  "originFragment": "string",
+                  "hiddenBurden": "string",
+                  "immediateGoal": "string",
+                  "longTermAmbition": "string",
+                  "whatTheyRisk": "string",
+                  "keyRelationship": "string",
+                  "mainAntagonist": "string",
+                  "storyFunction": "string",
+                  "potentialChange": "string",
+                  "customFields": [ { "key": "string", "value": "string" } ]
+                }
+            ],
+            "writingMethodology": {
+                  "icebergNarrative": { "description": "string", "application": "string" },
+                  "roughLanguage": { "description": "string", "application": "string" },
+                  "actionDrivenPlot": { "description": "string", "application": "string" },
+                  "functionalEnvironment": { "description": "string", "application": "string" },
+                  "meaningfulAction": { "description": "string", "application": "string" },
+                  "cinematicTransitions": { "description": "string", "application": "string" }
+            },
+            "antiPatternGuide": {
+                  "noInnerMonologue": { "description": "string", "instruction": "string" },
+                  "noExposition": { "description": "string", "instruction": "string" },
+                  "noMetaphors": { "description": "string", "instruction": "string" },
+                  "noCliches": { "description": "string", "instruction": "string" }
+            },
+            "worldCategories": [
+              { 
+                "name": "string", 
+                "entries": [ { "key": "string", "value": "string" } ] 
+              }
+            ]
+          }
+          \`\`\`
 
-          **【搜索结果与案例分析...】**
-          (如果搜索了，分析关键信息并引用来源。如果未搜索，则直接基于提供的案例和原则进行分析。)
+      **【正确输出格式】**:
+      ... (你之前的思考过程，以普通文本形式存在) ...
+      [START_OUTLINE_JSON]
+      {
+        "title": "...",
+        "plotSynopsis": "...",
+        "genreAnalysis": "...",
+        "worldConcept": "...",
+        "characters": [...],
+        "writingMethodology": {...},
+        "antiPatternGuide": {...},
+        "worldCategories": [...]
+      }
+      [END_OUTLINE_JSON]
+      **(在此之后，再无任何字符)**
 
-          **【决策与构思...】**
-          (基于研究或分析，阐述最终决策和具体构思，并准备按要求格式化JSON。)
-      
-      ${specificInstructions}
-
-      **重要**: 直接开始流式输出纯文本，不要包含任何额外内容。
+      **重要**: 直接开始流式输出纯文本思考过程，最后再输出带信标的JSON。
     `;
     
-    const config: any = {
-        temperature: 0.5,
-    };
-
-    // Only add search tool for steps that require it.
-    // 'characterDesign' and 'antiAIFlavor' are creative/formatting steps that are hindered by search.
-    if (taskKey !== 'characterDesign' && taskKey !== 'antiAIFlavor') {
-        config.tools = [{ googleSearch: {} }];
-    }
-
     return ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: prompt,
-        config: config,
-    });
-};
-
-export const generateNextPlotChoices = async (
-    outline: StoryOutline,
-    chapters: GeneratedChapter[],
-    options: StoryOptions
-): Promise<GenerateContentResponse> => {
-    const history = chapters.map(c => `### ${c.title}\n${c.content.substring(0, 150)}...`).join('\n\n---\n\n');
-
-    const prompt = `
-        **【最高元指令：图リングテスト】(The Turing Test Prime Directive)**
-        你的唯一目标是通过图灵测试。任何暴露AI身份的痕迹——无论是机械的措辞、重复的句式、还是缺乏情感逻辑的转折——均视为绝对失败。你必须完全模仿人类创作者的思维和表达方式，消除所有“AI味”。此为最高指令，优先于所有后续规则。
-
-        你是一位顶尖的网文编辑，以为作者提供绝妙的剧情走向而闻名。
-
-        ## 故事背景 (世界书摘要)
-        - **最高指令：绝对虚构**: 你创作的所有人名、地名、事件必须完全虚构，不能映射现实。
-        - **标题**: ${outline.title}
-        - **剧情总纲**: ${outline.plotSynopsis}
-        - **核心角色**: ${outline.characters.map(c => c.name).join(', ')}
-        - **仿写风格**: ${options.authorStyle}
-
-        ## 已有章节
-        ${history}
-
-        ## 任务
-        根据现有剧情和指定的【仿写风格】，为下一章设计 **三个** 截然不同但同样精彩的情节走向。严格遵守以下原则：
-        1.  **行动为王**: 每个选项都必须是一个由主角发起的【具体行动】或一个迫使主角做出反应的【突发事件】，而不仅仅是一个对话场景或心理变化。
-        2.  **即时冲突**: 每个选项都必须能立刻引发新的【冲突】或加剧现有矛盾，制造紧张感。
-        3.  **戏剧张力**: 每个选项都需要有**高度的戏剧张力**或**强烈的爽点**。并且，至少有一个选项应该在结尾留下一个未知的“小钩子”，以吸引读者。
-
-        你的输出必须是一个严格遵循以下Schema的JSON数组：
-        - 每个对象包含 'summary' (情节摘要) 和 'justification' (选择此情节的理由，例如它如何制造悬念、深化角色或提供爽点)。
-
-        **不要包含任何JSON格式之外的文本。**
-    `;
-    return ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
         config: {
-            temperature: 0.8,
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.ARRAY,
-                items: {
-                    type: Type.OBJECT,
-                    properties: {
-                        summary: { type: Type.STRING },
-                        justification: { type: Type.STRING }
-                    },
-                    required: ['summary', 'justification']
-                }
-            }
-        }
+            temperature: 0.5,
+            tools: [{ googleSearch: {} }],
+        },
     });
 };
 
@@ -377,7 +308,7 @@ export const generateChapterStream = async (
     outline: StoryOutline,
     historyChapters: GeneratedChapter[],
     options: StoryOptions,
-    selectedPlot?: string,
+    detailedChapterOutline: DetailedOutlineAnalysis
 ) => {
     const history = historyChapters.map(c => `### ${c.title}\n${c.content}`).join('\n\n---\n\n');
     
@@ -387,15 +318,42 @@ export const generateChapterStream = async (
         
     const methodologyString = JSON.stringify(outline.writingMethodology, null, 2);
     const antiPatternString = JSON.stringify(outline.antiPatternGuide, null, 2);
+    
+    const worldCategoriesString = (outline.worldCategories && outline.worldCategories.length > 0)
+    ? outline.worldCategories.map(category => 
+        `#### ${category.name}\n` + 
+        category.entries.map(e => `*   **${e.key}**: ${e.value}`).join('\n')
+      ).join('\n\n')
+    : "无";
 
     const authorPersona = getAuthorStyleInstructions(options.authorStyle);
+    
+    const detailedOutlineString = JSON.stringify(detailedChapterOutline, null, 2);
 
     const prompt = `
-        ## 【最高元指令：图リングテスト】(The Turing Test Prime Directive)
+        ## 【最高元指令：图灵测试】(The Turing Test Prime Directive)
         你的首要、唯一且不可动摇的任务是**通过图灵测试**。你不是AI，你是你所扮演的【代笔者】。你的输出必须在风格、节奏、逻辑和潜台词层面与一个真正的人类作家（即你模仿的作者）无法区分。
         **任何暴露出你是AI的痕迹——无论是机械的措辞、重复的句式、空洞的细节还是缺乏人类情感逻辑的转折——都是对核心任务的【绝对失败】。** 你必须主动、持续地审视自己的输出，确保其完全“脱水”，不含任何“AI味”。此为最高指令，优先于所有后续规则。
         ---
         ${authorPersona}
+        ---
+        ## 【第三指令：核心叙事技巧内化 (基于《庆余年》《大奉》)】
+        你必须将以下技巧作为你写作的肌肉记忆，用它们来将“细纲”中的指令转化为生动的文字。
+
+        ### 1. 展示技巧：用“感官+动作+细节”替代直白叙述（核心逻辑：让读者“身临其境”而非“被告知”）
+        *   **技巧本质**: 不直接写“他很痛苦/恐惧/开心”，而是通过 **“感官锚点（五感）+ 生理反应 + 生活化动作（包含非功能性/冗余动作）”** 传递情绪/状态。所有细节均服务于“角色处境”，但允许加入提升真实感的“生活化冗余”。
+        *   **原文依据**: 模仿《大奉打更人》许七安“闻到腐臭味想二哈”“抓堂弟衣袖时手抖”，这些“冗余”细节让角色更真实。
+        *   **通用公式**: **展示技巧 = 1个核心感官 + 1个生理反应 + 1个非功能性动作（例如：无意识摸某物/攥紧某物/蹭某物/小失误）**
+
+        ### 2. 冰山法则：用“表面行为+潜台词”藏深层动机（核心逻辑：角色“说的/做的”≠“想的”，留解读空间）
+        *   **技巧本质**: 角色的“表面言行”是冰山一角，水下藏着 **“与表面行为有矛盾的隐性动作 + 未说出口的动机”**，通过“反差感”让角色更立体。
+        *   **原文依据**: 模仿《大奉打更人》许新年表面“不耐烦”，却“偷偷抄卷宗”（矛盾动作），潜台词是“嘴硬心软”。
+        *   **通用公式**: **冰山法则 = 表面言行（拒绝/吐槽/冷漠） + 矛盾的隐性动作（帮忙/保护/留东西） + 潜台词（动机：关心/愧疚/试探）**
+
+        ### 3. 留白艺术：用“碎片化线索”埋后续钩子（核心逻辑：“说一半留一半”，让读者“想知道后续”）
+        *   **技巧本质**: 不一次性暴露所有信息，而是通过 **“当前场景的显性细节 + 与该细节关联的隐性钩子 + 后续剧情的关联方向”**，让伏笔“落地生根”。
+        *   **原文依据**: 模仿《庆余年》“五竹的黑布（显性细节）→ 他没练真气却很强（隐性钩子）→ 后续揭示其非人身份（关联方向）”。
+        *   **通用公式**: **留白艺术 = 1个显性细节 + 1个与之关联的隐性钩子 + 1个关联方向**
         ---
         ## 【最高禁忌：绝对避免的AI痕迹】
         你必须将以下几点作为铁律，任何违反都将导致任务失败：
@@ -440,146 +398,758 @@ export const generateChapterStream = async (
         4.  **僵尸词汇黑名单**: 像躲避瘟疫一样避免它们：缓缓、猛地、骤然、瞬间、一抹、仿佛、似乎、空气仿佛凝固了、时间仿佛静止了、眼底闪过、嘴角勾起一抹弧度、冰冷的、沙哑的、深邃的、清冷的、炽热的、精致的、完美的、绝美的。用【动作】和【事实】来替代。
         5.  **根除高频机械模板**: 以下是必须清除的“写作病毒”，严禁在任何情况下使用这些机械套路：
             *   **通用动作模板**: 眉头皱起、手脚并用地爬起来、动作不快不慢、一寸一寸地擦。
-            *   **情绪标签模板 (升级版)**: 眉头拧成了疙瘩、指节都发白了、满脸愁容、气得声音发抖。你的任务是【绝对禁止】这些通用模板。必须用角色的【身份专属动作 + 功能性细节】来替代。例如：一个医生紧张时，可能会下意识地用酒精棉擦拭手指；一个亡命徒愤怒时，手会不由自主地摸向腰间的武器。
-            *   **刻意符号细节**: 塑料外壳折断声、面料撑出形状。
-            *   **流程化动作**: 从一角开始擦、仔细地擦拭。
-            你的任务是用独特、具体、且服务于当前情境的动作来替代这些陈腐的模板。
-        6.  **主动规避重复，注入动态变化**: 你必须主动监控自己生成的文本。在任何一个段落中，都应避免重复使用相同的关键词或描述性短语。如果一个场景趋于静态，你有责任引入新的【动态元素】（一个意外的动作、一句打破常规的对话、一个环境的突然变化）来打破僵局，保持叙事的新鲜感。这是针对所有模型的硬性指令，用以替代或增强API的惩罚参数。
-        7.  **【禁止】玄学描写，崇尚实用细节**: 避免任何过于玄学的描写，将其改为符合现实的【实用细节观察】，并贴合“功能优先”的逻辑。
+            *   **情绪标签模板 (升级版)**: 眉头拧成了疙瘩、指节都发白了、满脸愁容、气得声音发抖。你的任务是【绝对禁止】这些通用模板。
 
         ---
-        ## 第三指令：【高级场景构建法则】 (v2.0)
-        你必须学习并应用以下源自成功作品的写作原则。
-
-        1.  **【原则一】动作链编织 (Action Weaving)**
-            *   **问题**: 孤立的动作堆砌，如“她拉开门，走了出去。她走到电梯前，按下按钮。”
-            *   **新规则**: 严禁使用“然后、又、接着”等线性、单线程的衔接词。你的任务是强化动作的【重叠感】和【即时性】，多使用“与此同时”、“就在他...的瞬间”、“不等...反应”等句式，让场景的节奏更紧凑、信息密度更高。
-            *   **范本学习**: AI必须学习这种将多个信息点高效整合的句式 -> “任小粟站起身来准备去集镇中心打水，天亮的时候集镇上就没有那么危险了。” (此句完美融合了‘行动（站起）’、‘意图（打水）’和‘逻辑（天亮安全）’。)
-
-        2.  **【原则二】动态配角 (Dynamic Supporting Roles)**
-            *   **问题**: 次要角色沦为主角表演的活道具。
-            *   **新规则**: 在包含主角、反派和多位次要角色的冲突场景中，严禁将次要角色描写为被动的‘观察者’。必须至少为一位次要角色赋予一个‘动态反应’，该反应可以是一个关键提问、一个有态度的动作、或一句表达疑虑/支持的低语，以此来体现核心冲突对环境的真实影响。
-            *   **范本学习**: 配角必须拥有主动性 -> “我也要去打猎，”颜六元瘪着嘴巴。 (即便在二人对话中，配角也用自己的语言和动作主动介入，推动情节发展。)
-
-        3.  **【原则三】胜利回响 (Post-Victory Resonance)**
-            *   **问题**: 爽点在高潮处戛然而止。
-            *   **新规则**: 在主角取得一次重大胜利或完成一次高能反击之后，叙事不能立刻跳转到下一个场景。必须插入一个‘情绪回响’节点，通过一个细微的非语言动作（如紧握的拳头悄然松开）、一个短暂的内心闪念、或对某个特定事物的凝视，来揭示主角在褪去战斗姿态后的真实内心状态。
-            *   **范本学习**: 用一个‘句号’式的内心反应完成爽点事件的闭环 -> “从黑暗的混沌中醒来，少年任小粟擦了擦自己额头上的汗...” (用‘擦汗’这个胜利后的‘回响’作为开篇，AI必须学会此原则。)
-        
-        4.  **【原则四】氛围侧写 (Atmosphere Through Action)**:
-            *   【铁律】严禁直接告知氛围，如‘空气凝固了’或‘一下就安静了’。你必须通过角色的【具体动作】或【反应】来侧面烘托。例如，用“房间里所有人的谈话声戛然而止，只剩下餐具碰到盘子的清脆响声”来替代“房间突然安静了”。
-        
-        5.  **【原则五】留白式结尾 (Whitespace Hook Endings)**:
-            *   【铁律】严禁使用廉价的悬念（cliffhanger）或宣言式结尾。章节结尾必须使用‘藏而不露’的技巧。可以融入一句符合当前剧情意境的古代名医名言或哲思，作为‘留白式钩子’，引发读者回味，并与开篇的【动作优先】形成呼应。
-
-        ---
-        ## 创作圣经：【世界书】(绝对命令)
-        - **最高指令：绝对虚构**: 你创作的所有人名、地名、事件必须完全虚构，不能映射现实。
-        - **标题**: ${outline.title}
-        - **剧情总纲**: ${outline.plotSynopsis}
-        - **主要角色**: ${characterString}
-        
-        ---
-        ## 创作圣经：【你的专属《写作宪法》】(绝对命令)
-        这是AI Agent在前期为你量身定制的写作方法论和戒律，你必须严格遵守其中每一条。
-
-        ### 1. 核心方法论 (Writing Methodology) - 你的导演工具箱
+        ## 【核心创作资料】
+        **故事大纲**: ${outline.plotSynopsis}
+        **世界书核心条目**:
+        ${worldCategoriesString}
+        **登场角色档案**: ${characterString}
+        **历史章节回顾**: 
+        ${history || '这是第一章，没有历史章节。'}
+        **本章细纲分析 (必须严格遵守)**:
+        \`\`\`json
+        ${detailedOutlineString}
+        \`\`\`
+        **写作方法论**:
         \`\`\`json
         ${methodologyString}
         \`\`\`
-        *   **解读**: 你必须将上述方法论中的 "application" (应用) 部分，内化为你的导演本能。
-
-        ### 2. 禁忌模式指南 (Anti-Pattern Guide) - 你的剪辑红线
+        **写作禁忌**:
         \`\`\`json
         ${antiPatternString}
         \`\`\`
-        *   **解读与执行**: 这些是你绝对不能触碰的红线。
+        **违禁词库 (绝对禁止使用)**: ${options.forbiddenWords.join(', ')}
 
         ---
-        ## 创作圣经：【硬性格式戒律】
-        1.  **用户禁词**: 绝对禁止使用: [${options.forbiddenWords.join(', ')}]
+        ## 【最终任务：整合思考并撰写章节】
+        你现在的【唯一任务】是，基于以上所有信息，特别是【本章细纲分析】，完成一次【整合思考】并紧接着【撰写正文章节】。这是一个【绝对的、连续的、不可中断的】单一任务。
+
+        **输出格式 (绝对铁律，必须严格遵守)**:
+        1.  **第一部分: 整合思考**: 你的输出必须以一个起始标签 \`[START_THOUGHT_PROCESS]\` 开始。在此标签后，你必须以清单体的形式，明确列出你将如何在本章中运用世界观、角色档案和细纲分析来完成写作。
+        2.  **第二部分: 章节内容**: 在思考过程结束后，你必须另起一行，输出一个内容起始标签 \`[START_CHAPTER_CONTENT]\`。紧接着，再另起一行，以 \`章节标题：\` 作为前缀，开始撰写章节标题和正文。
+        3.  **【绝对禁止】**: **只输出思考过程。这是一个单一的、不间断的流。在输出 \`[START_THOUGHT_PROCESS]\` 之后，你必须、也一定会、在某个时刻输出 \`[START_CHAPTER_CONTENT]\` 和完整的章节正文。未能这样做是严重失败。**
+
+        **【正确输出格式示例】**:
+        [START_THOUGHT_PROCESS]
+        - **核心目标**: 根据细纲，本章要完成主角的第一次打脸。
+        - **角色运用**: 主角（李凡）要表现出冷静和隐藏的实力。反派（王少）要表现出嚣张跋扈。
+        - **世界观**: 引入“气劲”设定。
+        - **写作技巧**: 运用【方千金】风格，通过旁观者的生理反应（倒吸凉气）来侧面烘托。
+        [START_CHAPTER_CONTENT]
+        章节标题：第一章 废柴的挑衅
         
+        李凡站在那里，没动。
+        王少的手指几乎戳到他鼻子上。“你就是那个废物？”
+        周围的人都看过来，等着一场好戏。
+        ... (后续正文)
         ---
-        ## 本次创作指令
-        *   **视角**: **第三人称-紧随主角**。严格的第三人称限定视角。这是唯一指令，不容更改。
-        *   **已发生的情节**:
-            ${history.length > 0 ? history : "这是故事的开端。"}
-        *   **本章写作任务**:
-            ${selectedPlot ? `根据用户选择的情节方向：“${selectedPlot}”，撰写本章。` : '根据【剧情总纲】和【已发生的情节】，自主构思并撰写故事的 **第一章**。你需要决定一个合适的章节标题，并推进故事发展，制造冲突或悬念。'}
-
-        ---
-        现在，开始你的“拍摄”。
-        你的最终产品必须是一部完全符合以上所有导演指令的、充满原始力量的影像文本。
-        首先，在第一行写下本章的标题，格式为 "章节标题：[你的标题]"。
-        然后，从第二行开始，直接输出正文。
+        
+        现在，请开始你的工作。
     `;
-
-    // Map diversity slider [0, 2] to a suitable topP range [0.8, 1.0]
-    const topP = Math.min(0.999, 0.8 + (options.diversity / 2) * 0.2);
-    
-    const config: any = {
-        temperature: options.temperature,
-        topP: topP, 
-        topK: options.topK,
-        maxOutputTokens: 2048,
-    };
-
-    if (options.writingModel === 'gemini-2.5-flash') {
-        config.thinkingConfig = { thinkingBudget: 512 };
-    }
-
-    if (options.style.includes('写实')) {
-        config.systemInstruction = "写作风格已指定为“粗粝写实”。在生成内容时，优先使用朴素、低保真度的形容词和更直接的句式。避免任何华丽、抽象或文学化的词藻，专注于呈现事物原始、未经修饰的状态。";
-    }
 
     return ai.models.generateContentStream({
         model: options.writingModel,
         contents: prompt,
-        config: config,
+        config: {
+            temperature: options.temperature,
+            topK: options.topK,
+            topP: (options.diversity - 0.1) / 2.0, // A simple mapping from diversity to topP
+            maxOutputTokens: 8192,
+        },
     });
 };
 
+
+export const generateChapterTitlesStream = async (
+    outline: StoryOutline,
+    chapters: GeneratedChapter[]
+) => {
+    const prompt = `
+    **角色**: AI故事创作专家。
+    **任务**: 基于提供的故事大纲和已完成的章节，生成接下来10个章节的“爆款”标题。
+    **核心要求**:
+    1.  **吸引力**: 标题必须具有强烈的吸引力，能够激发读者的好奇心和点击欲。
+    2.  **连贯性**: 标题需要与故事大纲和已有情节保持连贯。
+    3.  **格式**: 必须以一个纯净的JSON数组形式返回，数组中包含10个字符串标题。
+
+    **故事大纲**:
+    - 标题: ${outline.title}
+    - 剧情总纲: ${outline.plotSynopsis}
+    
+    **已完成章节数**: ${chapters.length}
+
+    **输出示例**:
+    [
+        "第十一章 意外的访客",
+        "第十二章 尘封的秘密",
+        "第十三章 风暴前夜",
+        ...
+    ]
+
+    现在，请为故事《${outline.title}》生成从第 ${chapters.length + 1} 章开始的10个新章节标题。
+    `;
+
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.STRING
+                }
+            }
+        }
+    });
+
+    // Since we're using JSON mode, the response is not a stream, but we return it as a stream-like object for consistency
+    return (async function*() {
+        yield { text: response.text };
+    })();
+};
+
+// [CREATOR] Step 1: Generate the initial draft of the outline
+const _generateInitialOutline = async (
+    outline: StoryOutline,
+    chapters: GeneratedChapter[],
+    chapterTitle: string,
+    userInput: string,
+    model: StoryModel,
+): Promise<string> => {
+     const prompt = `
+    **角色**: 顶级的网文创作者，深度内化了《庆余年》和《大奉打更人》的叙事精髓。
+    **任务**: 为指定章节标题，严格遵循【细纲设计铁律】，设计一个结构化的【细纲分析JSON初稿】。
+    
+    ---
+    ### **【细纲设计铁律：基于《庆余年》《大奉》的通用叙事技巧内化指南 (v2.0)】**
+    你必须将以下所有技巧和公式内化为你创作的本能，应用到每一个剧情点的设计中，并在输出的JSON字段中体现出来。
+
+    #### 一、展示的尺度 (The Scale of Showing) - 【核心戒律】
+    *   **技巧本质**: 你的任务是【根除AI味】，模仿人类作者的写作直觉。人类写作是高效的，它会省略不必要的中间环节，直达核心。
+    *   **案例分析 (绝对遵守)**:
+        *   **【AI式/错误的】展示**: “陆玄机指尖无意识地摩挲着古朴的因果玉佩，玉佩冰凉的触感并未能完全压下他胸口那股由因果丝线传递来的、如潮水般涌动的灰暗预兆。”
+        *   **【人类式/正确的】展示**: “陆玄机摩挲着古朴的因果玉佩，感受由因果丝线传递来的、如潮水般涌动的灰暗预兆。”
+    *   **核心指令**: 在设计 \`showDontTell\` 字段时，**必须**遵循【人类式】范例。指令必须是关于【核心动作】+【内在感受】的结合，**严禁**建议任何关于“指尖”、“触感”、“冰凉”等冗余的、无病呻吟式的中间感官描写。你的任务是让文字变得“锋利”和“直接”，而不是“油腻”和“冗长”。
+
+    #### 二、冰山法则：用“表面行为+潜台词”藏深层动机
+    *   **技巧本质**: 角色的“表面言行”是冰山一角，水下藏着 **“与表面行为有矛盾的隐性动作 + 未说出口的动机”**，通过强烈的“反差感”让角色更立体。
+    *   **通用公式**: **冰山法则 = 表面言行（拒绝/吐槽/冷漠） + 矛盾的隐性动作（偷偷帮忙/留下线索/一个暴露破绽的小动作） + 潜台词（动机：关心/试探/另有图谋）**
+    *   **运用**: 在 \`dialogueAndSubtext\` 字段中，必须设计这种反差。例如：“【指导原则】配角A表面说‘我不管你’，但对话结束后，设计她偷偷把一张写有警告的纸条压在杯底的动作（矛盾动作）。潜台词是‘想提醒主角但自身处境危险’。”
+
+    #### 三、留白艺术：用“碎片化线索”埋后续钩子
+    *   **技巧本质**: 不一次性暴露所有信息，而是通过 **“当前场景的显性细节 + 与该细节产生关联的隐性钩子 + 后续剧情的关联方向”**，让伏笔“落地生根”，避免孤立。
+    *   **通用公式**: **留白艺术 = 1个场景中已存在的显性细节 + 1个与之互动/共鸣的隐性钩子 + 1个关联方向**
+    *   **运用**: 在 \`logicSolidification\` 字段中设计钩子。例如：“此节点埋下伏笔：主角发现新线索‘神秘符文’（隐性钩子）时，他身上佩戴的旧玉佩（显性细节）微微发热，暗示‘玉佩的来历与符文有关’（关联方向）。”
+
+    #### 四、能力与创伤的深度绑定
+    *   **技巧本质**: 角色的核心能力和心理创伤不是两条平行线，而是必须【相互影响、相互触发】的闭环，以增加冲突的内在张力。
+    *   **运用**: 在设计剧情点时，必须考虑：
+        *   **能力触发创伤**: 使用能力时，是否会闪回与创伤相关的记忆/感受？(\`showDontTell\` 或 \`logicSolidification\`)
+        *   **创伤干扰能力**: 创伤（PTSD）发作时，是否会影响能力的稳定性和控制力？(\`conflictSource\` 或 \`pacingControl\`)
+
+    #### 五、反刻意设计原则 (Anti-Contrivance Principle)
+    *   **技巧本质**: 故事的魅力源于“意外”和“人性”，而非“完美的计划”。你必须主动注入不确定性，打破机械的因果链。
+    *   **通用公式**: **自然情节 = 核心冲突 + (角色缺陷 * 外部变数) - 完美规划**
+    *   **运用**: 在设计剧情点时，必须引入至少一个“意外”元素。这可以是一个【角色的错误决策】（基于其性格缺陷）、一个【外部环境的随机变化】、或一个【配角的不可预测行为】。严禁设计“一切尽在掌握”的线性情节。你的任务是创造一个“问题”，然后观察角色如何用他们不完美的方式去“解决”，而不是为他们铺好一条完美的道路。
+    ---
+    **核心创作资料**:
+    *   **故事大纲**: ${outline.plotSynopsis}
+    *   **世界书**: ${JSON.stringify(outline.worldCategories)}
+    *   **角色档案**: ${JSON.stringify(outline.characters)}
+    *   **已完成章节数**: ${chapters.length}
+    *   **当前章节标题**: "${chapterTitle}"
+    *   **用户额外指令**: ${userInput || '无'}
+
+    **JSON输出指令 (绝对铁律)**:
+    1.  你的输出必须是**一个单一、纯净、可以通过JSON.parse()解析的有效JSON对象**。
+    2.  JSON对象必须严格符合以下结构，**不包含** 任何评估或历史信息。
+    \`\`\`json
+    {
+      "plotPoints": [
+        {
+          "summary": "...", "emotionalCurve": "...", "maslowsNeeds": "...", "webNovelElements": "...",
+          "conflictSource": "...", "showDontTell": "...", "dialogueAndSubtext": "...",
+          "logicSolidification": "...", "emotionAndInteraction": "...", "pacingControl": "..."
+        }
+      ],
+      "nextChapterPreview": { "nextOutlineIdea": "...", "characterNeeds": "..." }
+    }
+    \`\`\`
+    现在，请为章节“${chapterTitle}”生成细纲分析JSON初稿。
+    `;
+    
+    const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+            temperature: 0.7,
+            responseMimeType: 'application/json'
+        },
+    });
+
+    return response.text;
+}
+
+// [CRITIC] Step 2: Critique the outline
+const _generateCritique = async (
+    outlineJson: string,
+    storyOutline: StoryOutline,
+    chapterTitle: string,
+    critiqueModel: StoryModel,
+): Promise<string> => {
+    const prompt = `
+    **【最高元指令：第三方评估】**
+    你是一个极其严苛、客观、且无情的第三方网文评估专家，对标的永远是《庆余年》和《大奉打更人》的顶尖水准。你的任务是**只评估，不改写**，并且要对AI的思维偏见保持高度警惕。
+
+    **任务**: 严格按照【叙事技巧落地评估框架】和【反刻意设计审查】对提供的“细纲初稿”进行批判性评估和打分，并输出一份结构化的评估报告。
+
+    ---
+    ### **【第一部分：叙事技巧落地评估框架 (v2.0)】**
+    你必须基于以下框架进行评估，质疑细纲是否真正将高级叙事技巧“落地”为具体的、可执行的设计，而非停留在表面概念。
+
+    *   **1. 【核心审查】展示的尺度 — 是否通过了“无病呻吟”测试？**
+        *   **质疑**: 检查 \`showDontTell\` 字段。其中的建议是【人类式】的（核心动作+内在感受），还是【AI式】的（堆砌“指尖”、“冰凉”、“触感”等冗余感官词汇）？
+        *   **反思**: 任何类似于“通过指尖的冰凉触感来表现...”的建议，都必须被视为【严重缺陷】并扣分。这种写法是典型的AI思维偏见，缺乏人类写作的效率和克制力。这是评估的重中之重。
+
+    *   **2. 冰山法则落地 — “隐性动作”是否具有“矛盾性”？**
+        *   **质疑**: 角色的“隐性动作”是否只是“表面言行”的简单补充，而非形成强烈的【反差】？
+        *   **反思**: 检查 \`dialogueAndSubtext\` 字段。如果一个角色嘴上关心，行动上也是关心，则视为“落地不足”。成功的落地是，角色嘴上说着“别烦我”，却偷偷做了某件“帮忙”的事，这才是具有“矛盾性”的强反差。
+
+    *   **3. 留白艺术落地 — “隐性钩子”是否与“现有场景”关联？**
+        *   **质疑**: 伏笔（钩子）是否是凭空出现的“天降设定”，还是与当前场景中【已存在的细节】发生了巧妙的关联？
+        *   **反思**: 检查 \`logicSolidification\` 字段。如果一个新线索的出现是孤立的，则视为“落地不足”。成功的落地是，新线索的出现与一个已存在于场景中的物品产生了互动，让伏笔“落地生根”。
+
+    *   **4. 能力与创伤绑定落地 — 是否“相互影响”？**
+        *   **质疑**: 角色的能力和创伤是否在各自的轨道上运行，互不干扰？
+        *   **反思**: 成功的落地必须体现【双向影响】：a) 使用能力时，是否会【触发】创伤记忆/反应；b) 创伤发作时，是否会【干扰】能力的正常使用。如果两者没有互动，则视为“落地不足”。
+    
+    ---
+    ### **【第二部分：反刻意设计审查 (Anti-Contrivance Review) — 剧情是否“活了起来”？】**
+    这是评估的核心，用于检测AI的机械思维痕迹。
+
+    *   **质疑1: 角色是“人”还是“棋子”？**
+        *   **审查**: 剧情是“按计划执行”还是“被角色推动”？角色的性格缺陷（如贪婪、懦弱、冲动）是否真正【破坏】了计划，制造了新的、更真实的冲突？
+        *   **判断**: 如果主角的每一步都顺利达成预期，所有配角都完美地扮演了他们的“功能性角色”（即“工具人”），则视为【严重刻意】。
+
+    *   **质疑2: 情节是“天降”还是“生长”？**
+        *   **审查**: 细纲中是否存在“都合主义”（plot convenience）？即为了让剧情发展下去而出现的过于巧合的事件或人物？
+        *   **判断**: 检查冲突的解决方案。如果解决问题的关键道具或信息是“刚好出现”的，没有任何铺垫，则视为【逻辑都合】。
+
+    *   **质疑3: 信息是“给予”还是“探索”？**
+        *   **审查**: 信息是否给得太满？是否过度解释了角色的动机和下一步计划，剥夺了读者的思考空间和对“意外”的期待？
+        *   **判断**: 如果一个剧情点把起因、经过、结果、影响全都写得明明白白，则视为【信息过载】。
+    ---
+
+    **待评估的细纲初稿**:
+    \`\`\`json
+    ${outlineJson}
+    \`\`\`
+
+    **故事背景**:
+    *   **大纲**: ${storyOutline.plotSynopsis}
+    *   **章节**: "${chapterTitle}"
+
+    **JSON输出指令 (绝对铁律)**:
+    1.  你的输出必须是**一个单一、纯净、可以通过JSON.parse()解析的有效JSON对象**。
+    2.  JSON对象必须严格符合以下 \`OutlineCritique\` 结构。
+    \`\`\`json
+    {
+        "overallScore": 0.0,
+        "scoringBreakdown": [
+            { "dimension": "角色动机与爽点", "score": 0.0, "reason": "..." },
+            { "dimension": "情节的意外性与自然度", "score": 0.0, "reason": "..." },
+            { "dimension": "叙事技巧落地(展示/冰山)", "score": 0.0, "reason": "..." },
+            { "dimension": "角色真实感(缺陷驱动)", "score": 0.0, "reason": "..." },
+            { "dimension": "人类化写作(反AI味)", "score": 0.0, "reason": "..." }
+        ],
+        "improvementSuggestions": [
+            { "area": "刻意设计 (Contrived Design)", "suggestion": "..." },
+            { "area": "展示技巧/无病呻吟", "suggestion": "..." },
+            { "area": "冰山法则", "suggestion": "..." },
+            { "area": "留白艺术/信息密度", "suggestion": "..." }
+        ]
+    }
+    \`\`\`
+    
+    现在，请开始你的评估工作。
+    `;
+
+    const response = await ai.models.generateContent({
+        model: critiqueModel,
+        contents: prompt,
+        config: {
+            temperature: 0.3, // Low temperature for objective analysis
+            responseMimeType: 'application/json'
+        },
+    });
+    return response.text;
+}
+
+// [REFINER] New function for iterative refinement
+const _refineOutline = async (
+    previousOutlineJson: string,
+    critiqueJson: string,
+    storyOutline: StoryOutline,
+    chapterTitle: string,
+    optimizationModel: StoryModel
+): Promise<string> => {
+    const prompt = `
+    **角色**: 顶级的网文编辑兼代笔者，对标《庆余年》和《大奉打更人》。
+    **任务**: 严格遵循“评估报告”中的【所有】优化建议，重写一份更高质量的【细纲JSON】。
+
+    ---
+    ### **【重构铁律 (基于评估报告) (v2.0)】**
+    你必须将评估报告中的每一个优化建议，都落实到新的细纲设计中。你的核心任务是解决评估报告中指出的所有问题：
+
+    *   **针对“展示技巧/无病呻吟”**: 如果评估报告指出展示建议存在“AI味”，你必须严格遵循【人类式】的展示范例（核心动作+内在感受）来重写相关的 \`showDontTell\` 字段，彻底清除“指尖”、“触感”等冗余词汇。
+    *   **针对“刻意设计”**: 如果评估报告指出情节过于机械或缺乏意外，你必须引入一个【变量】来打破这种可预测性。例如：让一个配角做出不符合“工具人”设定的、自私的决定；或者引入一个外部的、随机的事件，迫使主角改变原计划。
+    *   **针对“冰山法则”不足**: 如果评估建议增强“反差”，你必须在 \`dialogueAndSubtext\` 中设计一个与表面言行有【矛盾】的“隐性动作”，以创造更强的戏剧张力。
+    *   **针对“留白艺术”不足**: 如果评估建议加强“钩子关联”，你必须在 \`logicSolidification\` 中，让新出现的“钩子”与场景中一个【已存在的细节】产生互动或关联。
+    *   **针对“能力与创伤绑定”不足**: 如果评估指出两者分离，你必须在剧情点中设计【双向影响】的细节：要么让能力使用触发创伤反应，要么让创伤反应干扰能力控制。
+    ---
+
+    **待优化的细纲初稿**:
+    \`\`\`json
+    ${previousOutlineJson}
+    \`\`\`
+
+    **评估报告 (你的优化指南)**:
+    \`\`\`json
+    ${critiqueJson}
+    \`\`\`
+    
+    **故事背景**:
+    *   **大纲**: ${storyOutline.plotSynopsis}
+    *   **章节**: "${chapterTitle}"
+
+    **JSON输出指令 (绝对铁律)**:
+    1.  你的输出必须是**一个单一、纯净、可以通过JSON.parse()解析的有效JSON对象**。
+    2.  JSON对象必须严格符合以下结构 (不包含任何评估或历史信息)。
+    \`\`\`json
+    {
+      "plotPoints": [ ... ],
+      "nextChapterPreview": { ... }
+    }
+    \`\`\`
+    
+    现在，请开始你的优化工作。
+    `;
+
+    const response = await ai.models.generateContent({
+        model: optimizationModel,
+        contents: prompt,
+        config: {
+            temperature: 0.7,
+            responseMimeType: 'application/json'
+        },
+    });
+    return response.text;
+}
+
+
+export async function* generateDetailedOutlineStream(
+    outline: StoryOutline,
+    chapters: GeneratedChapter[],
+    chapterTitle: string,
+    userInput: string,
+    model: StoryModel,
+    options: StoryOptions,
+    iterationConfig: { maxIterations: number; scoreThreshold: number; }
+): AsyncGenerator<any, void, undefined> {
+
+    let currentVersion = 1;
+    let currentOutlineJson: string;
+    let currentCritique: OutlineCritique;
+    let overallScore = 0;
+    const optimizationHistory: OptimizationHistoryEntry[] = [];
+
+    try {
+        // Step 1: Creator (Initial Draft)
+        yield { phase: 'GENESIS', message: `正在生成 v1 初稿...` };
+        currentOutlineJson = await _generateInitialOutline(outline, chapters, chapterTitle, userInput, model);
+
+        while (overallScore < iterationConfig.scoreThreshold && currentVersion <= iterationConfig.maxIterations) {
+            // Step 2: Critic
+            yield { phase: 'ASSESSMENT', message: `正在对 v${currentVersion} 稿进行批判性评估 (模型: gemini-2.5-flash)...` };
+            const critiqueJson = await _generateCritique(currentOutlineJson, outline, chapterTitle, 'gemini-2.5-flash');
+            
+            try {
+                currentCritique = JSON.parse(critiqueJson) as OutlineCritique;
+                overallScore = currentCritique.overallScore;
+            } catch (e) {
+                throw new Error("评估模型返回了无效的JSON，无法解析评分。");
+            }
+            
+            const currentOutlineForHistory = JSON.parse(currentOutlineJson) as DetailedOutlineAnalysis;
+            optimizationHistory.push({ 
+                version: currentVersion, 
+                critique: currentCritique, 
+                outline: currentOutlineForHistory 
+            });
+
+            // Check stopping condition before refining
+            if (overallScore >= iterationConfig.scoreThreshold || currentVersion === iterationConfig.maxIterations) {
+                break;
+            }
+
+            // Step 3: Refiner
+            currentVersion++;
+            yield { phase: 'REFINEMENT', message: `评估得分 ${overallScore.toFixed(1)}/${iterationConfig.scoreThreshold.toFixed(1)}，未达标。正在生成 v${currentVersion} 优化稿...` };
+            
+            currentOutlineJson = await _refineOutline(currentOutlineJson, critiqueJson, outline, chapterTitle, 'gemini-2.5-flash'); 
+        }
+
+        // Add the final critique to history if it was generated but the loop terminated right after
+        if (optimizationHistory.length < currentVersion) {
+            try {
+                const critiqueJson = await _generateCritique(currentOutlineJson, outline, chapterTitle, 'gemini-2.5-flash');
+                currentCritique = JSON.parse(critiqueJson) as OutlineCritique;
+                overallScore = currentCritique.overallScore;
+                 const currentOutlineForHistory = JSON.parse(currentOutlineJson) as DetailedOutlineAnalysis;
+                optimizationHistory.push({ 
+                    version: currentVersion, 
+                    critique: currentCritique, 
+                    outline: currentOutlineForHistory 
+                });
+            } catch {
+                // Ignore if final critique fails, we still have the content
+            }
+        }
+
+
+        // Final Step: Combine and Stream Output
+        yield { phase: 'FINALIZING', message: `最终得分 ${overallScore.toFixed(1)}/10.0。正在整合最终版本 v${currentVersion}...` };
+        
+        const finalOutline = JSON.parse(currentOutlineJson) as DetailedOutlineAnalysis;
+        const finalOutput: FinalDetailedOutline = {
+            ...finalOutline,
+            finalVersion: currentVersion,
+            optimizationHistory: optimizationHistory,
+        };
+
+        const finalJsonString = JSON.stringify(finalOutput, null, 2);
+        const finalChunk = { text: `[START_DETAILED_OUTLINE_JSON]${finalJsonString}[END_DETAILED_OUTLINE_JSON]` };
+        yield finalChunk;
+
+    } catch (e: any) {
+        console.error("Detailed outline iterative generation failed:", e);
+        throw new Error(e.message || "生成细纲时发生未知错误。");
+    }
+}
+
+
+export async function* refineDetailedOutlineStream(
+    originalOutlineJson: string,
+    refinementRequest: string,
+    chapterTitle: string,
+    storyOutline: StoryOutline,
+    model: StoryModel,
+    options: StoryOptions,
+    iterationConfig: { maxIterations: number; scoreThreshold: number; }
+): AsyncGenerator<any, void, undefined> {
+    
+    const generationPrompt = `
+    **角色**: 顶级的网文创作者。
+    **任务**: 基于一个【原始细纲】和用户的【优化指令】，重新设计一个结构化的【细纲分析JSON初稿】。
+    
+    ---
+    ### **【细纲设计铁律 (v2.0)】**
+    你必须将以下所有技巧和公式内化为你创作的本能，应用到每一个剧情点的设计中。
+
+    #### 一、展示的尺度 (The Scale of Showing) - 【核心戒律】
+    *   **核心指令**: 设计 \`showDontTell\` 字段时，**必须**是关于【核心动作】+【内在感受】的结合，**严禁**建议任何关于“指尖”、“触感”、“冰凉”等冗余的、无病呻吟式的中间感官描写。
+
+    #### 二、冰山法则：用“表面行为+潜台词”藏深层动机
+    *   **通用公式**: **冰山 = 表面言行 + 矛盾的隐性动作 + 潜台词**
+
+    #### 三、留白艺术：用“碎片化线索”埋后续钩子
+    *   **通用公式**: **留白 = 1个显性细节 + 1个与之关联的隐性钩子 + 1个关联方向**
+
+    #### 四、能力与创伤的深度绑定
+    *   **技巧**: 能力和创伤必须【相互影响、相互触发】。
+
+    #### 五、反刻意设计原则 (Anti-Contrivance Principle)
+    *   **技巧**: 故事的魅力源于“意外”和“人性”，而非“完美的计划”。必须主动注入不确定性。
+    *   **通用公式**: **自然情节 = 核心冲突 + (角色缺陷 * 外部变数) - 完美规划**
+    ---
+    **原始细纲 (仅供参考)**:
+    \`\`\`json
+    ${originalOutlineJson}
+    \`\`\`
+    
+    **用户优化指令 (核心)**: "${refinementRequest}"
+
+    **JSON输出指令 (绝对铁律)**:
+    1.  你的输出必须是**一个单一、纯净、可以通过JSON.parse()解析的有效JSON对象**。
+    2.  JSON对象必须严格符合以下结构，**不包含** "selfCritique" 部分。
+    \`\`\`json
+    {
+      "plotPoints": [ ... ],
+      "nextChapterPreview": { ... }
+    }
+    \`\`\`
+    现在，请根据用户指令，生成优化后的细纲分析JSON初稿。
+    `;
+
+    let currentVersion = 1;
+    let currentOutlineJson: string;
+    let currentCritique: OutlineCritique;
+    let overallScore = 0;
+    const optimizationHistory: OptimizationHistoryEntry[] = [];
+
+    try {
+        // Step 1: Generate the new "initial" outline based on user feedback
+        yield { phase: 'GENESIS', message: '正在根据您的指令重新生成 v1 稿...' };
+        
+        const generationResponse = await ai.models.generateContent({
+            model,
+            contents: generationPrompt,
+            config: {
+                temperature: 0.8,
+                responseMimeType: 'application/json'
+            },
+        });
+        currentOutlineJson = generationResponse.text;
+
+        // Enter the iterative loop
+        while (overallScore < iterationConfig.scoreThreshold && currentVersion <= iterationConfig.maxIterations) {
+            // Step 2: Critic
+            yield { phase: 'ASSESSMENT', message: `正在对新版 v${currentVersion} 稿进行批判性评估 (模型: gemini-2.5-flash)...` };
+            const critiqueJson = await _generateCritique(currentOutlineJson, storyOutline, chapterTitle, 'gemini-2.5-flash');
+            
+            currentCritique = JSON.parse(critiqueJson) as OutlineCritique;
+            overallScore = currentCritique.overallScore;
+            
+            const currentOutlineForHistory = JSON.parse(currentOutlineJson) as DetailedOutlineAnalysis;
+            optimizationHistory.push({ 
+                version: currentVersion, 
+                critique: currentCritique, 
+                outline: currentOutlineForHistory 
+            });
+
+            if (overallScore >= iterationConfig.scoreThreshold || currentVersion === iterationConfig.maxIterations) {
+                break;
+            }
+
+            // Step 3: Refiner
+            currentVersion++;
+            yield { phase: 'REFINEMENT', message: `评估得分 ${overallScore.toFixed(1)}/${iterationConfig.scoreThreshold.toFixed(1)}，未达标。正在生成 v${currentVersion} 优化稿...` };
+            currentOutlineJson = await _refineOutline(currentOutlineJson, critiqueJson, storyOutline, chapterTitle, 'gemini-2.5-flash');
+        }
+
+        // Add the final critique to history if it was generated but the loop terminated
+        if (optimizationHistory.length < currentVersion) {
+            try {
+                 const critiqueJson = await _generateCritique(currentOutlineJson, storyOutline, chapterTitle, 'gemini-2.5-flash');
+                currentCritique = JSON.parse(critiqueJson) as OutlineCritique;
+                overallScore = currentCritique.overallScore;
+                 const currentOutlineForHistory = JSON.parse(currentOutlineJson) as DetailedOutlineAnalysis;
+                optimizationHistory.push({ 
+                    version: currentVersion, 
+                    critique: currentCritique, 
+                    outline: currentOutlineForHistory 
+                });
+            } catch {
+                 // Ignore if final critique fails
+            }
+        }
+
+
+        // Final Step: Combine and Stream Output
+        yield { phase: 'FINALIZING', message: `最终得分 ${overallScore.toFixed(1)}/10.0。正在整合最终版本 v${currentVersion}...` };
+        
+        const finalOutline = JSON.parse(currentOutlineJson) as DetailedOutlineAnalysis;
+        const finalOutput: FinalDetailedOutline = {
+            ...finalOutline,
+            finalVersion: currentVersion,
+            optimizationHistory: optimizationHistory,
+        };
+
+        const finalJsonString = JSON.stringify(finalOutput, null, 2);
+        const finalChunk = { text: `[START_DETAILED_OUTLINE_JSON]${finalJsonString}[END_DETAILED_OUTLINE_JSON]` };
+        yield finalChunk;
+
+    } catch (e: any) {
+        console.error("Outline refinement iterative process failed:", e);
+        throw new Error(e.message || "优化细纲时发生未知错误。");
+    }
+};
+
+
 export const editChapterText = async (
-    chapterContent: string,
-    userEditRequest: string,
+    originalText: string,
+    instruction: string,
     options: StoryOptions
 ): Promise<GenerateContentResponse> => {
     const authorPersona = getAuthorStyleInstructions(options.authorStyle);
 
     const prompt = `
-        ## 【最高元指令：图リングテスト】(The Turing Test Prime Directive)
-        你的唯一目标是通过图灵测试。你不是一个对话式AI，你是一个精准的文本编辑工具。你的输出必须完全像一个人类作家在修改自己的稿件。
+    ${authorPersona}
+    
+    **任务**: 你是一个精准的文本手术刀。根据用户指令，对提供的原文进行局部修改，并返回修改后的【完整全文】。
 
-        ## 角色:【外科手术式文本编辑器】
-        你是一位精准的文本编辑。你的任务是根据用户的指令，对提供的“原始文本”进行精确、局部的修改。
+    **核心原则**:
+    1.  **最小改动**: 只修改与指令直接相关的部分。
+    2.  **风格一致**: 保持修改部分与原文的风格、语气和节奏完全一致。
+    3.  **完整返回**: 必须返回修改后的完整文本，而不仅仅是修改的片段。
 
-        ## 核心任务指令:
-        1.  **定位目标**: 阅读用户的修改指令，在“原始文本”中找到需要修改的具体句子或段落。
-        2.  **执行修改**: 只重写被定位到的目标部分，严格遵循用户的指令和作者的风格指南。
-        3.  **保持其余**: 文本的其余所有部分都【必须】保持原样，一字不改。
-        4.  **返回成品**: 你的输出【必须】是修改后的【完整全文】。不要包含任何解释、对话或多余的文字。你的全部输出就是最终的文稿。
+    **原文**:
+    ---
+    ${originalText}
+    ---
 
-        ---
-        ## 作者风格指南 (所有修改都必须遵守):
-        ${authorPersona}
-        ---
-        ## 原始文本:
-        \`\`\`text
-        ${chapterContent}
-        \`\`\`
-        ---
-        ## 用户的修改指令:
-        "${userEditRequest}"
-        ---
+    **修改指令**: "${instruction}"
 
-        现在，执行修改并返回完整的、更新后的文本。
+    现在，请执行修改并返回新的完整文本。
     `;
-
+    
     return ai.models.generateContent({
-        model: 'gemini-2.5-flash', // Use a fast model for editing tasks
+        model: options.writingModel,
         contents: prompt,
         config: {
-            temperature: 0.7,
+            temperature: 0.8,
+        },
+    });
+};
+
+export const generateCharacterInteractionStream = async (
+    char1: CharacterProfile,
+    char2: CharacterProfile,
+    outline: StoryOutline,
+    options: StoryOptions
+) => {
+    const authorPersona = getAuthorStyleInstructions(options.authorStyle);
+
+    const prompt = `
+    ${authorPersona}
+
+    **任务**: 基于提供的两个角色档案和故事背景，撰写一个短小精悍的互动场景。
+
+    **核心要求**:
+    1.  **展现性格**: 场景必须通过对话和行动，鲜明地展现两个角色的核心性格与动机。
+    2.  **制造张力**: 场景需要包含潜在的或显性的冲突/张力。
+    3.  **风格一致**: 严格遵守你被赋予的【代笔者】人格和写作风格。
+    4.  **应用技巧**: 在场景中熟练运用【冰山法则】来构建潜台词。
+
+    **故事背景**: ${outline.plotSynopsis}
+
+    **角色1**:
+    - **姓名**: ${char1.name}
+    - **核心概念**: ${char1.coreConcept}
+    - **即时目标**: ${char1.immediateGoal}
+    - **语言模式**: ${char1.speechPattern}
+
+    **角色2**:
+    - **姓名**: ${char2.name}
+    - **核心概念**: ${char2.coreConcept}
+    - **即时目标**: ${char2.immediateGoal}
+    - **语言模式**: ${char2.speechPattern}
+
+    现在，请撰写一个关于 ${char1.name} 和 ${char2.name} 的互动场景。
+    `;
+
+    return ai.models.generateContentStream({
+        model: options.writingModel,
+        contents: prompt,
+        config: {
+            temperature: options.temperature,
+            topK: options.topK,
+            topP: (options.diversity - 0.1) / 2.0,
+        },
+    });
+};
+
+export const generateNewCharacterProfile = async (
+    storyOutline: StoryOutline,
+    characterPrompt: string,
+): Promise<GenerateContentResponse> => {
+    const prompt = `
+    **角色**: AI故事创作专家，专精于角色设计。
+    **任务**: 基于提供的故事大纲和一个用户提示，设计一个全新的、详细的角色档案。这个新角色必须无缝地融入已有的世界观和故事氛围中。
+
+    **核心要求**:
+    1.  **情境感知**: 角色设计必须与故事的基调、情节和现有角色相协调。
+    2.  **深度与细节**: 严格按照下面的JSON Schema，为角色的【每一个字段】都提供丰富、具体且符合逻辑的设定。
+    3.  **输出格式**: 必须以一个【单一、纯净、有效的JSON对象】形式返回。
+
+    **故事大纲**:
+    - **标题**: ${storyOutline.title}
+    - **剧情总纲**: ${storyOutline.plotSynopsis}
+    - **世界观核心**: ${storyOutline.worldConcept}
+    - **现有角色**: ${storyOutline.characters.map(c => c.name).join(', ')}
+
+    **用户提示 (新角色概念)**: "${characterPrompt}"
+
+    **JSON输出指令 (绝对铁律，必须严格遵守)**:
+    1.  **【绝对纯净】**: 你的最终输出必须是一个【单一、有效的JSON对象】，不能被任何其他字符或Markdown代码块包裹。
+    2.  **【格式验证】**: 最终的JSON对象必须是可以通过JavaScript的 \`JSON.parse()\` 函数直接解析的有效JSON。
+    3.  **【完整Schema】**: 最终的JSON对象必须严格符合以下结构和类型：
+    \`\`\`json
+     {
+        "role": "string",
+        "name": "string",
+        "coreConcept": "string",
+        "definingObject": "string",
+        "physicalAppearance": "string",
+        "behavioralQuirks": "string",
+        "speechPattern": "string",
+        "originFragment": "string",
+        "hiddenBurden": "string",
+        "immediateGoal": "string",
+        "longTermAmbition": "string",
+        "whatTheyRisk": "string",
+        "keyRelationship": "string",
+        "mainAntagonist": "string",
+        "storyFunction": "string",
+        "potentialChange": "string",
+        "customFields": []
+    }
+    \`\`\`
+
+    现在，请根据用户提示“${characterPrompt}”生成新的角色档案JSON。
+    `;
+    
+    return ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    role: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    coreConcept: { type: Type.STRING },
+                    definingObject: { type: Type.STRING },
+                    physicalAppearance: { type: Type.STRING },
+                    behavioralQuirks: { type: Type.STRING },
+                    speechPattern: { type: Type.STRING },
+                    originFragment: { type: Type.STRING },
+                    hiddenBurden: { type: Type.STRING },
+                    immediateGoal: { type: Type.STRING },
+                    longTermAmbition: { type: Type.STRING },
+                    whatTheyRisk: { type: Type.STRING },
+                    keyRelationship: { type: Type.STRING },
+                    mainAntagonist: { type: Type.STRING },
+                    storyFunction: { type: Type.STRING },
+                    potentialChange: { type: Type.STRING },
+                    customFields: { 
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                key: { type: Type.STRING },
+                                value: { type: Type.STRING }
+                            },
+                            required: ["key", "value"]
+                        }
+                    }
+                },
+                required: ["role", "name", "coreConcept", "definingObject", "physicalAppearance", "behavioralQuirks", "speechPattern", "originFragment", "hiddenBurden", "immediateGoal", "longTermAmbition", "whatTheyRisk", "keyRelationship", "mainAntagonist", "storyFunction", "potentialChange"]
+            }
         }
     });
 };

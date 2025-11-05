@@ -23,6 +23,7 @@ const authorStyles: { name: AuthorStyle, description: string }[] = [
     { name: '老鹰吃小鸡', description: '代表作《全球高武》。快节奏战斗，杀伐果断，力量体系数值化。' },
     { name: '言归正传', description: '代表作《我师兄实在太稳健了》。现代都市背景，轻松吐槽，风趣幽默。' },
     { name: '远瞳', description: '代表作《异常生物见闻录》。宏大世界观，日常与异常的交织，史诗感。' },
+    { name: '方千金', description: '代表作《天才医生》。专业领域碾压，生理反应描写，快节奏打脸。' },
 ];
 
 const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOptions }) => {
@@ -63,13 +64,13 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
         <div className="space-y-6">
             <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Agent思考模型
+                    Agent思考/细纲模型
                 </label>
                 <div className="w-full p-3 bg-slate-800/60 border border-slate-700 rounded-lg">
                     <p className="text-slate-200 font-semibold">gemini-2.5-flash</p>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                    负责联网研究、构思、决策和整合计划。此模型通过Google搜索工具实现联网功能，此项不可配置。
+                    负责联网研究、构思、细纲的创作、评估与优化。此项固定为快速模型，以保证客观性和迭代效率。
                 </p>
             </div>
             
@@ -77,16 +78,10 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                  <label htmlFor="writing-model" className="block text-sm font-medium text-slate-300 mb-2">
                     写作模型 (章节正文生成)
                 </label>
-                <select
-                    id="writing-model"
-                    value={options.writingModel}
-                    onChange={e => handleOptionChange('writingModel', e.target.value as StoryModel)}
-                    className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
-                >
-                    <option value="gemini-2.5-pro">gemini-2.5-pro (高质量)</option>
-                    <option value="gemini-2.5-flash">gemini-2.5-flash (备选快速)</option>
-                </select>
-                <p className="text-xs text-slate-500 mt-1">仅用于精细化地撰写最终的章节正文内容。推荐使用高质量模型以获得最佳效果。</p>
+                 <div className="w-full p-3 bg-slate-800/60 border border-slate-700 rounded-lg">
+                    <p className="text-slate-200 font-semibold">gemini-2.5-pro (高质量)</p>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">为保证最佳创作效果，正文写作已固定使用高质量模型。</p>
             </div>
              <div>
                  <label htmlFor="author-style" className="block text-sm font-medium text-slate-300 mb-2">

@@ -1,3 +1,4 @@
+// FIX: Removed circular import of GameState from the same file.
 export enum GameState {
   INITIAL,
   PLANNING,
@@ -9,11 +10,11 @@ export enum GameState {
   ERROR,
 }
 
-export type ActiveTab = 'agent' | 'worldbook' | 'characters' | 'writing';
+export type ActiveTab = 'agent' | 'worldbook' | 'characters' | 'outline' | 'writing';
 
 export type StoryModel = 'gemini-2.5-pro' | 'gemini-2.5-flash';
-export type StoryLength = '短篇(约5-10章)' | '中篇(约11-30章)' | '长篇(30章以上)';
-export type AuthorStyle = '默认风格' | '爱潜水的乌贼' | '辰东' | '猫腻' | '会说话的肘子' | '我吃西红柿' | '方想' | '孑与2' | '卖报小郎君' | '宅猪' | '神医下山风格' | '老鹰吃小鸡' | '言归正传' | '远瞳';
+export type StoryLength = '超短篇(5-10章)' | '短篇(15-30章)' | '中篇(30-100章)' | '长篇(100章以上)';
+export type AuthorStyle = '默认风格' | '爱潜水的乌贼' | '辰东' | '猫腻' | '会说话的肘子' | '我吃西红柿' | '方想' | '孑与2' | '卖报小郎君' | '宅猪' | '神医下山风格' | '老鹰吃小鸡' | '言归正传' | '远瞳' | '方千金';
 
 export interface StoryOptions {
     writingModel: StoryModel;
@@ -26,8 +27,13 @@ export interface StoryOptions {
     forbiddenWords: string[]; 
 }
 
+export interface CustomField {
+  key: string;
+  value: string;
+}
+
 export interface CharacterProfile {
-  role: '核心' | '次要' | '龙套';
+  role: string;
   name: string;
   coreConcept: string; 
   definingObject: string; 
@@ -43,6 +49,7 @@ export interface CharacterProfile {
   mainAntagonist: string; 
   storyFunction: string; 
   potentialChange: string; 
+  customFields?: CustomField[];
 }
 
 export interface WritingMethodology {
@@ -61,6 +68,16 @@ export interface AntiPatternGuide {
     noCliches: { description: string; instruction: string; };
 }
 
+export interface WorldEntry {
+  key: string;
+  value: string;
+}
+
+export interface WorldCategory {
+  name: string;
+  entries: WorldEntry[];
+}
+
 export interface StoryOutline {
   title: string;
   genreAnalysis: string;
@@ -69,6 +86,8 @@ export interface StoryOutline {
   characters: CharacterProfile[];
   writingMethodology: WritingMethodology;
   antiPatternGuide: AntiPatternGuide;
+  worldCategories: WorldCategory[];
+  worldEntries?: WorldEntry[]; // For backward compatibility during migration
 }
 
 export interface GeneratedChapter {
@@ -76,6 +95,7 @@ export interface GeneratedChapter {
   title: string;
   content: string;
   status: 'streaming' | 'complete';
+  preWritingThought?: string;
 }
 
 export interface Citation {
@@ -95,4 +115,59 @@ export interface ThoughtStep {
 export interface NextPlotChoice {
     summary: string;
     justification: string;
+}
+
+// Types for the new structured detailed outline
+export interface PlotPointAnalysis {
+  summary: string;
+  emotionalCurve: string;
+  maslowsNeeds: string;
+  webNovelElements: string;
+  conflictSource: string;
+  showDontTell: string;
+  dialogueAndSubtext: string;
+  logicSolidification: string;
+  emotionAndInteraction: string;
+  pacingControl: string;
+}
+
+export interface NextChapterPreview {
+  nextOutlineIdea: string;
+  characterNeeds: string;
+}
+
+export interface DetailedOutlineAnalysis {
+  plotPoints: PlotPointAnalysis[];
+  nextChapterPreview: NextChapterPreview;
+}
+
+// New types for the iterative critique framework
+export interface ScoringDimension {
+  dimension: string;
+  score: number;
+  reason: string;
+}
+
+export interface ImprovementSuggestion {
+  area: string;
+  suggestion: string;
+}
+
+export interface OutlineCritique {
+  overallScore: number;
+  scoringBreakdown: ScoringDimension[];
+  improvementSuggestions: ImprovementSuggestion[];
+}
+
+// An entry for one round of optimization
+export interface OptimizationHistoryEntry {
+  version: number;
+  critique: OutlineCritique;
+  outline: DetailedOutlineAnalysis; // Store the parsed outline for easier display
+}
+
+// The new top-level type for the final detailed outline, which includes the history
+export interface FinalDetailedOutline extends DetailedOutlineAnalysis {
+  finalVersion: number;
+  optimizationHistory: OptimizationHistoryEntry[];
 }
