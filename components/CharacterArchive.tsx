@@ -196,7 +196,8 @@ const CharacterArchive: React.FC<CharacterArchiveProps> = ({ storyOutline, onUpd
     setIsLoading('new');
     setError(null);
     try {
-        const newChar = await generateNewCharacterProfile(storyOutline, newCharacterPrompt, storyOptions);
+        const response = await generateNewCharacterProfile(storyOutline, newCharacterPrompt, storyOptions);
+        const newChar = JSON.parse(response.text) as CharacterProfile;
         onUpdate({ characters: [...characters, newChar] });
         setShowAddForm(false);
         setNewCharacterPrompt('');
