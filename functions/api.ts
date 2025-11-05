@@ -10,7 +10,7 @@ import {
   getNewCharacterProfilePrompts,
 } from './prompts';
 
-import type { StoryOptions, Citation } from '../types';
+import type { StoryOptions, Citation, OutlineGenerationProgress } from '../types';
 
 interface PagesFunctionContext {
   request: Request;
@@ -133,11 +133,11 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         let isStreaming = false;
         
         switch (action) {
-            case 'performSearch': case 'generateStoryOutline': case 'generateDetailedOutline': 
-            case 'refineDetailedOutline': case 'generateChapterTitles': case 'editChapterText': 
-            case 'generateNewCharacterProfile':
+            case 'performSearch': case 'generateStoryOutline': case 'generateChapterTitles': 
+            case 'editChapterText': case 'generateNewCharacterProfile':
                 isStreaming = false; break;
-            case 'generateChapter': case 'generateCharacterInteraction':
+            case 'generateChapter': case 'generateCharacterInteraction': case 'generateDetailedOutline': 
+            case 'refineDetailedOutline':
                 isStreaming = true; break;
             default: throw new Error(`Unknown action: ${action}`);
         }
@@ -157,6 +157,60 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         if (!model) throw new Error(`No model selected for action: ${action}. Please check your settings.`);
 
         if (isStreaming) {
+            if (action === 'generateDetailedOutline' || action === 'refineDetailedOutline') {
+                 const { readable, writable } = new TransformStream();
+                 const writer = writable.getWriter();
+                 const encoder = new TextEncoder();
+
+                 (async () => {
+                    let currentOutline = "";
+                    let optimizationHistory = [];
+                    let finalVersion = 0;
+                    
+                    try {
+                        for (let i = 1; i <= restPayload.iterationConfig.maxIterations; i++) {
+                            const progress: OutlineGenerationProgress = {
+                                status: 'refining', version: i, maxVersions: restPayload.iterationConfig.maxIterations,
+                                score: optimizationHistory[optimizationHistory.length - 1]?.critique.overallScore || 0,
+                                message: `v${i}: 编剧正在创作新稿...`
+                            };
+                            await writer.write(encoder.encode(JSON.stringify({ progress }) + '\n'));
+                            
+                            const iterationPrompt = i === 1 && action === 'generateDetailedOutline' 
+                                ? prompt 
+                                : getRefineDetailedOutlinePrompts(currentOutline, `这是第${i}轮优化。请根据上一轮的优化建议进行修改。`, restPayload.chapterTitle, restPayload.outline, options, restPayload.iterationConfig);
+                            
+                            const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, iterationPrompt, options);
+                            const parsedJson = JSON.parse(extractJsonFromText(resultText));
+                            
+                            currentOutline = JSON.stringify({ plotPoints: parsedJson.plotPoints, nextChapterPreview: parsedJson.nextChapterPreview });
+                            optimizationHistory = parsedJson.optimizationHistory;
+                            finalVersion = parsedJson.finalVersion;
+                            const latestCritique = parsedJson.optimizationHistory[parsedJson.optimizationHistory.length - 1]?.critique;
+
+                            const progressCritique: OutlineGenerationProgress = {
+                                status: 'critiquing', version: i, maxVersions: restPayload.iterationConfig.maxIterations,
+                                score: latestCritique?.overallScore || 0,
+                                message: `v${i} 评估完成 - 分数: ${latestCritique?.overallScore.toFixed(1)}`
+                            };
+                            await writer.write(encoder.encode(JSON.stringify({ progress: progressCritique }) + '\n'));
+
+                            // PER-ITERATION SAVE
+                            await writer.write(encoder.encode(JSON.stringify({ result: `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(parsedJson, null, 2)}\n[END_DETAILED_OUTLINE_JSON]` }) + '\n'));
+
+                            if (latestCritique && latestCritique.overallScore >= restPayload.iterationConfig.scoreThreshold) {
+                                break; // Success
+                            }
+                        }
+                    } catch(e: any) {
+                        await writer.write(encoder.encode(JSON.stringify({ error: e.message }) + '\n'));
+                    } finally {
+                        await writer.close();
+                    }
+                 })();
+                 return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
+            }
+
             const { readable, writable } = new TransformStream();
             streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt, options, writable);
             return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
@@ -167,7 +221,6 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             switch (action) {
                 case 'performSearch': responseBody = { text: resultText, citations: [] }; break; // No citations in custom mode
                 case 'generateStoryOutline': responseBody = { text: `[START_OUTLINE_JSON]\n${jsonText}\n[END_OUTLINE_JSON]` }; break;
-                case 'generateDetailedOutline': case 'refineDetailedOutline': responseBody = { text: `[START_DETAILED_OUTLINE_JSON]\n${jsonText}\n[END_DETAILED_OUTLINE_JSON]` }; break;
                 case 'generateChapterTitles': responseBody = { titles: JSON.parse(jsonText) }; break;
                 case 'generateNewCharacterProfile': responseBody = { text: jsonText }; break;
                 case 'editChapterText': responseBody = { text: resultText }; break;

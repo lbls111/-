@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
-import { generateChapterTitles, generateDetailedOutline, refineDetailedOutline } from '../services/geminiService';
+import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis, OutlineGenerationProgress } from '../types';
+import { generateChapterTitles, generateDetailedOutlineStream, refineDetailedOutlineStream } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 import SendIcon from './icons/SendIcon';
@@ -17,6 +17,11 @@ interface OutlineGeneratorProps {
     storyOptions: StoryOptions;
     activeOutlineTitle: string | null;
     setActiveOutlineTitle: React.Dispatch<React.SetStateAction<string | null>>;
+    // New props for global state management
+    isGenerating: boolean;
+    onGenerationStart: (initialProgress: OutlineGenerationProgress) => void;
+    onGenerationProgress: (progress: OutlineGenerationProgress) => void;
+    onGenerationEnd: () => void;
 }
 
 const AnalysisField: React.FC<{ label: string; value: any; color: string }> = ({ label, value, color }) => {
@@ -174,9 +179,13 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     setOutlineHistory,
     storyOptions,
     activeOutlineTitle,
-    setActiveOutlineTitle
+    setActiveOutlineTitle,
+    isGenerating,
+    onGenerationStart,
+    onGenerationProgress,
+    onGenerationEnd
 }) => {
-    const [isLoading, setIsLoading] = useState<'titles' | 'outline' | 'refine' | null>(null);
+    const [isLoadingTitles, setIsLoadingTitles] = useState(false);
     const [userInput, setUserInput] = useState('');
     const [error, setError] = useState<string | null>(null);
 
@@ -192,7 +201,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
 
 
     const handleGenerateTitles = async () => {
-        setIsLoading('titles');
+        setIsLoadingTitles(true);
         setError(null);
         setActiveOutlineTitle(null);
         try {
@@ -203,22 +212,34 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
             console.error("Chapter title generation failed:", e);
             setError(e.message || "生成章节标题时发生未知错误。");
         } finally {
-            setIsLoading(null);
+            setIsLoadingTitles(false);
         }
     };
 
     const runIterativeOutlineGeneration = async (
-        generatorFunction: () => Promise<{ text: string }>
+        generatorStream: () => AsyncGenerator<any, void, undefined>
     ) => {
         if (!activeOutlineTitle) return;
+        
         setError(null);
+        onGenerationStart({ status: 'refining', version: 1, maxVersions: maxIterations, score: 0, message: `开始生成 v1...` });
         
         try {
-            const response = await generatorFunction();
-            setOutlineHistory(prev => ({...prev, [activeOutlineTitle]: response.text}));
+            const stream = generatorStream();
+            for await (const chunk of stream) {
+                if (chunk.error) { throw new Error(chunk.error); }
+                if (chunk.progress) {
+                    onGenerationProgress(chunk.progress);
+                }
+                if (chunk.result) {
+                    setOutlineHistory(prev => ({...prev, [activeOutlineTitle as string]: chunk.result}));
+                }
+            }
         } catch (e: any) {
             console.error("Detailed outline generation failed:", e);
-            setError(e.message || "生成细纲时发生未知错误。");
+            const errorMessage = e.message || "生成细纲时发生未知错误。";
+            setError(errorMessage);
+            onGenerationProgress({ status: 'error', version: 0, maxVersions: maxIterations, score: 0, message: errorMessage });
             // Clear history for this title on failure so user can retry
             setOutlineHistory(prev => {
                 const newHistory = {...prev};
@@ -226,23 +247,21 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                 return newHistory;
             });
         } finally {
-            setIsLoading(null);
+            onGenerationEnd();
         }
     };
 
     const handleGenerateOutline = async () => {
         if (!activeOutlineTitle) return;
-        setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutline(storyOutline, chapters, activeOutlineTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutlineStream(storyOutline, chapters, activeOutlineTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
     const handleRegenerateOutline = async () => {
         if (!activeOutlineTitle) return;
-        setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutline(storyOutline, chapters, activeOutlineTitle, '', storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutlineStream(storyOutline, chapters, activeOutlineTitle, '', storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -250,12 +269,9 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         e.preventDefault();
         if (!activeOutlineTitle || !refinementRequest.trim() || !outlineHistory[activeOutlineTitle]) return;
         
-        setIsLoading('refine');
-        
         const originalParsed = parsedOutline;
         if (!originalParsed) {
             setError("无法优化，原始细纲数据无效。");
-            setIsLoading(null);
             return;
         }
 
@@ -268,7 +284,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setRefinementRequest('');
         
         await runIterativeOutlineGeneration(() => 
-            refineDetailedOutline(originalOutlineForRefinement, refinementInput, activeOutlineTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
+            refineDetailedOutlineStream(originalOutlineForRefinement, refinementInput, activeOutlineTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -322,11 +338,11 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
             <div className="border-t border-white/10 pt-4">
                 <button
                     onClick={handleGenerateTitles}
-                    disabled={!!isLoading}
+                    disabled={isGenerating || isLoadingTitles}
                     className="w-full flex items-center justify-center px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
                 >
-                    {isLoading === 'titles' ? <LoadingSpinner className="w-5 h-5 mr-2" /> : <SparklesIcon className="w-5 h-5 mr-2" />}
-                    {isLoading === 'titles' ? '正在生成...' : `生成 ${generatedTitles.length + nextChapterStart}-${generatedTitles.length + nextChapterStart + 9} 章标题`}
+                    {isLoadingTitles ? <LoadingSpinner className="w-5 h-5 mr-2" /> : <SparklesIcon className="w-5 h-5 mr-2" />}
+                    {isLoadingTitles ? '正在生成...' : `生成 ${generatedTitles.length + nextChapterStart}-${generatedTitles.length + nextChapterStart + 9} 章标题`}
                 </button>
             </div>
 
@@ -338,7 +354,8 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                             <button 
                                 key={index} 
                                 onClick={() => setActiveOutlineTitle(title)}
-                                className={`p-3 text-left rounded-md text-sm transition-colors duration-200 ${activeOutlineTitle === title ? 'bg-teal-600 text-white font-semibold' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                                disabled={isGenerating}
+                                className={`p-3 text-left rounded-md text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${activeOutlineTitle === title ? 'bg-teal-600 text-white font-semibold' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
                             >
                                 <span className="font-mono text-xs opacity-70 mr-2">{chapters.length + index + 1}.</span> {title}
                             </button>
@@ -358,7 +375,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                 <button
                                     onClick={handleRegenerateOutline}
                                     className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors disabled:opacity-50"
-                                    disabled={!!isLoading}
+                                    disabled={isGenerating}
                                     title="重新生成"
                                 >
                                     <RefreshCwIcon className="w-3.5 h-3.5"/>
@@ -394,7 +411,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                         value={scoreThreshold}
                                         onChange={e => setScoreThreshold(parseFloat(e.target.value))}
                                         className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                                        disabled={!!isLoading}
+                                        disabled={isGenerating}
                                     />
                                 </div>
                                 <div>
@@ -411,7 +428,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                         value={maxIterations}
                                         onChange={e => setMaxIterations(parseInt(e.target.value))}
                                         className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                                        disabled={!!isLoading}
+                                        disabled={isGenerating}
                                     />
                                 </div>
                             </div>
@@ -427,16 +444,16 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     onChange={e => setUserInput(e.target.value)}
                                     placeholder="输入优化或指导（可选）"
                                     className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm"
-                                    disabled={!!isLoading}
+                                    disabled={isGenerating}
                                 />
                             </div>
 
                             <button
                                 onClick={handleGenerateOutline}
-                                disabled={!!isLoading}
+                                disabled={isGenerating}
                                 className="w-full flex items-center justify-center px-4 py-2 bg-cyan-600 text-white font-bold rounded-lg hover:bg-cyan-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
                             >
-                                {isLoading === 'outline' ? <LoadingSpinner className="w-5 h-5 mr-2" /> : <SparklesIcon className="w-5 h-5 mr-2" />}
+                                <SparklesIcon className="w-5 h-5 mr-2" />
                                 生成本章细纲分析
                             </button>
                         </div>
@@ -448,11 +465,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                     {outlineHistory[activeOutlineTitle] !== undefined && (
                         <div className="space-y-4">
                              <div className="p-4 bg-slate-950/50 rounded-lg border border-slate-700 max-h-[60rem] overflow-y-auto space-y-6">
-                                {isLoading ? (
-                                    <div className='flex items-center justify-center text-slate-400 p-8'>
-                                        <LoadingSpinner className="w-4 h-4 mr-2"/> 正在生成...
-                                    </div>
-                                ) : parsedOutline ? (
+                                {parsedOutline ? (
                                     <>
                                         <div className="flex justify-between items-center pb-4 border-b border-slate-700">
                                             <h4 className="text-xl font-bold text-slate-100">终版细纲 (v{parsedOutline.finalVersion})</h4>
@@ -514,16 +527,16 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     placeholder="输入优化指令..."
                                     rows={3}
                                     className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-sky-500 transition text-sm resize-y"
-                                    disabled={!!isLoading}
+                                    disabled={isGenerating}
                                 />
                                 <div className="flex items-center justify-end">
                                     <button
                                         type="submit"
-                                        disabled={!!isLoading || !refinementRequest.trim()}
+                                        disabled={isGenerating || !refinementRequest.trim()}
                                         className="flex items-center justify-center px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-500 transition-colors shadow-md disabled:bg-slate-600 disabled:cursor-not-allowed"
                                     >
-                                        {isLoading === 'refine' ? <LoadingSpinner className="w-5 h-5 mr-2"/> : <SendIcon className="w-5 h-5 mr-2"/>}
-                                        {isLoading === 'refine' ? '优化中...' : '发送'}
+                                        <SendIcon className="w-5 h-5 mr-2"/>
+                                        发送
                                     </button>
                                 </div>
                              </form>

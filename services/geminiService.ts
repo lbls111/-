@@ -114,31 +114,31 @@ export const generateChapterTitles = async (
     return titles;
 };
 
-// NON-STREAMING: The iterative process happens server-side for reliability.
-export const generateDetailedOutline = async (
+// STREAMING: The iterative process is now streamed to the frontend for progress display and reliability.
+export const generateDetailedOutlineStream = (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     chapterTitle: string,
     userInput: string,
     options: StoryOptions,
     iterationConfig: { maxIterations: number; scoreThreshold: number; }
-): Promise<{ text: string }> => {
-     return postFetch<{ text: string }>('/api', {
+) => {
+     return streamFetch('/api', {
         action: 'generateDetailedOutline',
         payload: { outline, chapters, chapterTitle, userInput, options, iterationConfig }
      });
 }
 
-// NON-STREAMING
-export const refineDetailedOutline = async (
+// STREAMING: Refinement also becomes a streaming action for consistency.
+export const refineDetailedOutlineStream = (
     originalOutlineJson: string,
     refinementRequest: string,
     chapterTitle: string,
     storyOutline: StoryOutline,
     options: StoryOptions,
     iterationConfig: { maxIterations: number; scoreThreshold: number; }
-): Promise<{ text: string }> => {
-     return postFetch<{ text: string }>('/api', {
+) => {
+     return streamFetch('/api', {
         action: 'refineDetailedOutline',
         payload: { originalOutlineJson, refinementRequest, chapterTitle, storyOutline, options, iterationConfig }
      });
