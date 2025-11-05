@@ -1,7 +1,7 @@
 import type { GenerateContentResponse } from "@google/genai";
 import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation } from '../types';
 
-// Helper for streaming responses from our backend
+// Helper for streaming responses from our backend proxy, which now forwards OpenAI-compatible SSE
 async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
     const response = await fetch(endpoint, {
         method: 'POST',
@@ -25,25 +25,35 @@ async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, vo
     while (true) {
         const { done, value } = await reader.read();
         if (done) {
-            if (buffer.trim().length > 0) {
-                 try { yield JSON.parse(buffer); } catch (e) { console.error("Error parsing final chunk:", buffer, e); }
-            }
             break;
         }
         
         buffer += decoder.decode(value, { stream: true });
         
-        // Process line by line for line-delimited JSON
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep the last, potentially incomplete line
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
-            if (line.trim()) {
-                 try { yield JSON.parse(line); } catch (e) { console.error("Error parsing stream line:", line, e); }
+            if (line.startsWith('data: ')) {
+                const data = line.substring(6);
+                if (data.trim() === '[DONE]') {
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(data);
+                    // Extract the actual text content from the OpenAI-compatible stream chunk
+                    const text = parsed.choices?.[0]?.delta?.content || '';
+                    if (text) {
+                       yield { text }; // Yield in the format the App expects
+                    }
+                } catch (e) {
+                    console.error("Error parsing stream data:", data, e);
+                }
             }
         }
     }
 }
+
 
 // Helper for non-streaming JSON responses from our backend
 async function postFetch<T>(endpoint: string, body: any): Promise<T> {

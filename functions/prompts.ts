@@ -36,8 +36,12 @@ const SYSTEM_PROMPT = `你是一个世界级的网络小说作家兼写作教练
 4.  **JSON格式**: 当被要求提供JSON时，你必须生成一个严格符合语法、可被解析的JSON对象，并将其包裹在指定的开始和结束标签内。不要在JSON前后添加任何多余的文字或解释。
 5.  **语言**: 你的所有输出都必须使用简体中文。`;
 
+// FIX: Create a reusable system message object for the OpenAI-compatible API format.
+const SYSTEM_MESSAGE = { role: 'system', content: SYSTEM_PROMPT };
+
 export const prompts = {
-    search: (storyCore: string): string => `
+    // FIX: All prompt functions now return an array of message objects instead of a string.
+    search: (storyCore: string): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：研究与分析
 你是一个专业的市场分析师和网文研究员。请基于以下故事核心创意，利用你的知识库和搜索能力，生成一份简明扼要的研究报告。
 
@@ -52,9 +56,9 @@ ${storyCore}
 3.  **世界观构想**: 提出3个可以深化这个创意的世界观设定方向或独特的“金手指”概念。
 4.  **总结**: 综合以上分析，为这个故事核心提供一个清晰、有市场潜力的发展方向建议。
 
-报告需简洁、条理清晰，直接输出报告内容。`,
+报告需简洁、条理清晰，直接输出报告内容。`}]),
 
-    storyOutline: (researchReport: string, options: StoryOptions): string => `
+    storyOutline: (researchReport: string, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：生成完整创作计划
 你是一个顶级的网文编辑和策划人。基于以下AI研究报告和用户设定，为故事创作一份详尽的创作计划。这份计划必须是一个完整的JSON对象，严格遵循指定的结构。
 
@@ -129,15 +133,15 @@ interface WorldEntry {
 \`\`\`
 
 # 执行指令
-现在，请深度模仿 **${options.authorStyle}** 的风格，生成上述结构的JSON对象。确保所有字段都被填充，内容详实且引人入र्प。
+现在，请深度模仿 **${options.authorStyle}** 的风格，生成上述结构的JSON对象。确保所有字段都被填充，内容详实且引人入胜。
 [START_OUTLINE_JSON]
 {
   // ... 在这里生成完整的JSON对象 ...
 }
 [END_OUTLINE_JSON]
-`,
+`}]),
 
-    generateChapter: (outline: StoryOutline, history: GeneratedChapter[], detailedOutline: DetailedOutlineAnalysis, options: StoryOptions): string => `
+    generateChapter: (outline: StoryOutline, history: GeneratedChapter[], detailedOutline: DetailedOutlineAnalysis, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：撰写小说章节
 你是一位模仿大师，现在你的灵魂是 **${options.authorStyle}**。你的任务是基于故事大纲、章节历史、以及本章的详细分镜，撰写新的章节。
 
@@ -179,9 +183,9 @@ ${JSON.stringify(detailedOutline, null, 2)}
 (在这里开始写章节正文...)
 \`\`\`
 
-现在，化身为 **${options.authorStyle}**，开始你的创作。`,
+现在，化身为 **${options.authorStyle}**，开始你的创作。`}]),
     
-    generateChapterTitles: (outline: StoryOutline, chapters: GeneratedChapter[], options: StoryOptions): string => `
+    generateChapterTitles: (outline: StoryOutline, chapters: GeneratedChapter[], options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：生成后续章节标题
 你是一个经验丰富的网文编辑，擅长构思吸引人的章节标题。基于以下故事信息，生成10个符合故事风格和节奏的后续章节标题。
 
@@ -206,9 +210,9 @@ ${JSON.stringify(detailedOutline, null, 2)}
 }
 \`\`\`
 
-请直接输出JSON对象。`,
+请直接输出JSON对象。`}]),
 
-    generateDetailedOutline: (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions): string => `
+    generateDetailedOutline: (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：生成章节细纲并进行迭代优化 (V1)
 你是一个由顶级网文作家、资深编辑和数据分析师组成的AI写作委员会。你的任务是为指定章节生成一个极其详尽、可执行的“细纲分析”，并立即对其进行第一轮的“自我批判与优化”。
 
@@ -291,9 +295,9 @@ interface ImprovementSuggestion {
   // ... 在这里生成完整的JSON对象 ...
 }
 [END_DETAILED_OUTLINE_JSON]
-`,
+`}]),
 
-    refineDetailedOutline: (previousOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions): string => `
+    refineDetailedOutline: (previousOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：迭代优化章节细纲
 你是一个由顶级网文作家、资深编辑和数据分析师组成的AI写作委员会。你收到了一个已有的章节细纲版本和新的优化指令，需要在此基础上生成一个更优的新版本。
 
@@ -323,9 +327,9 @@ ${previousOutlineJson}
   // ... 在这里生成完整的、更新后的JSON对象 ...
 }
 [END_DETAILED_OUTLINE_JSON]
-`,
+`}]),
 
-    editChapter: (originalText: string, instruction: string, options: StoryOptions): string => `
+    editChapter: (originalText: string, instruction: string, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：文本微调
 你是一位精通模仿 **${options.authorStyle}** 风格的文字编辑。你的任务是根据用户的指令，对提供的文本进行精确、局部的修改，同时保持其余部分的风格和内容不变。
 
@@ -344,9 +348,9 @@ ${instruction}
 2.  **风格一致**: 修改后的部分必须与原文风格（**${options.authorStyle}**）完美融合。
 3.  **完整输出**: 返回修改后的完整章节文本。
 
-现在，请开始修改并输出完整文本。`,
+现在，请开始修改并输出完整文本。`}]),
 
-    generateCharacterInteraction: (char1: CharacterProfile, char2: CharacterProfile, outline: StoryOutline, options: StoryOptions): string => `
+    generateCharacterInteraction: (char1: CharacterProfile, char2: CharacterProfile, outline: StoryOutline, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：生成角色互动场景
 你是一位模仿大师，现在你的灵魂是 **${options.authorStyle}**。你的任务是基于两个角色档案和故事背景，创作一个500字左右的短场景，展现他们之间的互动。
 
@@ -371,9 +375,9 @@ ${outline.plotSynopsis}
 ## 场景要求
 创作一个能体现两人性格、关系和潜在冲突的场景。场景需要有明确的开始、发展和结束。
 
-现在，化身为 **${options.authorStyle}**，开始你的创作。`,
+现在，化身为 **${options.authorStyle}**，开始你的创作。`}]),
     
-    generateNewCharacter: (storyOutline: StoryOutline, characterPrompt: string, options: StoryOptions): string => `
+    generateNewCharacter: (storyOutline: StoryOutline, characterPrompt: string, options: StoryOptions): any[] => ([SYSTEM_MESSAGE, { role: 'user', content: `
 # 任务：生成新角色档案
 你是一个顶级的网文作者，精通角色设计。基于已有的故事大纲和用户提供的新角色概念，生成一个符合 **${options.authorStyle}** 风格的、完整的角色档案。
 
@@ -413,5 +417,5 @@ interface CharacterProfile {
 }
 \`\`\`
 
-请立即生成JSON对象。`
+请立即生成JSON对象。`}]),
 };
