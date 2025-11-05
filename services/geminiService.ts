@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, StoryModel, DetailedOutlineAnalysis } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis } from '../types';
 
 // Helper for streaming responses from our backend
 async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
@@ -78,6 +78,12 @@ async function postFetch<T>(endpoint: string, body: any): Promise<T> {
     }
 }
 
+export const listModels = async (options: { apiBaseUrl: string, apiKey: string }): Promise<string[]> => {
+    return postFetch<string[]>('/api', {
+        action: 'listModels',
+        payload: { options }
+    });
+}
 
 export const generateStoryOutlineStream = (storyCore: string, options: StoryOptions) => {
     return streamFetch('/api', {
@@ -100,11 +106,12 @@ export const generateChapterStream = (
 
 export const generateChapterTitlesStream = async (
     outline: StoryOutline,
-    chapters: GeneratedChapter[]
+    chapters: GeneratedChapter[],
+    options: StoryOptions
 ) => {
     const { titlesJson } = await postFetch<{ titlesJson: string }>('/api', {
         action: 'generateChapterTitles',
-        payload: { outline, chapters }
+        payload: { outline, chapters, options }
     });
      // Return as a stream-like object for consistency with original code
     return (async function*() {
@@ -117,13 +124,12 @@ export async function* generateDetailedOutlineStream(
     chapters: GeneratedChapter[],
     chapterTitle: string,
     userInput: string,
-    model: StoryModel,
     options: StoryOptions,
     iterationConfig: { maxIterations: number; scoreThreshold: number; }
 ): AsyncGenerator<any, void, undefined> {
      yield* streamFetch('/api', {
         action: 'generateDetailedOutline',
-        payload: { outline, chapters, chapterTitle, userInput, model, options, iterationConfig }
+        payload: { outline, chapters, chapterTitle, userInput, options, iterationConfig }
      });
 }
 
@@ -132,13 +138,12 @@ export async function* refineDetailedOutlineStream(
     refinementRequest: string,
     chapterTitle: string,
     storyOutline: StoryOutline,
-    model: StoryModel,
     options: StoryOptions,
     iterationConfig: { maxIterations: number; scoreThreshold: number; }
 ): AsyncGenerator<any, void, undefined> {
      yield* streamFetch('/api', {
         action: 'refineDetailedOutline',
-        payload: { originalOutlineJson, refinementRequest, chapterTitle, storyOutline, model, options, iterationConfig }
+        payload: { originalOutlineJson, refinementRequest, chapterTitle, storyOutline, options, iterationConfig }
      });
 }
 
@@ -168,9 +173,10 @@ export const generateCharacterInteractionStream = (
 export const generateNewCharacterProfile = async (
     storyOutline: StoryOutline,
     characterPrompt: string,
+    options: StoryOptions
 ): Promise<GenerateContentResponse> => {
     return postFetch<GenerateContentResponse>('/api', {
         action: 'generateNewCharacterProfile',
-        payload: { storyOutline, characterPrompt }
+        payload: { storyOutline, characterPrompt, options }
     });
 };

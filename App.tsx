@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
-import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, StoryModel, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline } from './types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline } from './types';
 import { generateStoryOutlineStream, generateChapterStream, editChapterText, generateChapterTitlesStream } from './services/geminiService';
 
 import SparklesIcon from './components/icons/SparklesIcon';
@@ -67,7 +67,11 @@ const DEFAULT_ANTI_PATTERN_GUIDE: AntiPatternGuide = {
     noCliches: { description: '', instruction: '' },
 };
 const DEFAULT_STORY_OPTIONS: StoryOptions = {
-    writingModel: 'gemini-2.5-pro',
+    apiBaseUrl: '',
+    apiKey: '',
+    availableModels: [],
+    planningModel: '',
+    writingModel: '',
     style: '爽文 (重生复仇打脸)',
     length: '短篇(15-30章)',
     authorStyle: '默认风格',
@@ -89,6 +93,8 @@ const getInitialState = () => {
             storyOutline.worldCategories = [{ name: "核心设定", entries: storyOutline.worldEntries }];
             delete storyOutline.worldEntries; // Remove old key
         }
+        
+        const mergedOptions = { ...DEFAULT_STORY_OPTIONS, ...(storyOptions || {}) };
 
         // If there's an outline but no chapters, we're likely in the outlining phase
         if (storyOutline && (!chapters || chapters.length === 0)) {
@@ -98,7 +104,7 @@ const getInitialState = () => {
                 initialStoryCore: storyCore || '',
                 initialStoryOutline: storyOutline,
                 initialChapters: [],
-                initialStoryOptions: storyOptions || DEFAULT_STORY_OPTIONS,
+                initialStoryOptions: mergedOptions,
                 initialGeneratedTitles: generatedTitles || [],
                 initialOutlineHistory: outlineHistory || {},
             };
@@ -112,7 +118,7 @@ const getInitialState = () => {
             initialStoryCore: storyCore || '',
             initialStoryOutline: storyOutline,
             initialChapters: chapters,
-            initialStoryOptions: storyOptions || DEFAULT_STORY_OPTIONS,
+            initialStoryOptions: mergedOptions,
             initialGeneratedTitles: generatedTitles || [],
             initialOutlineHistory: outlineHistory || {},
           };
@@ -263,7 +269,7 @@ const App: React.FC = () => {
         setActiveTab('outline');
         
         try {
-            const stream = await generateChapterTitlesStream(finalOutline, []);
+            const stream = await generateChapterTitlesStream(finalOutline, [], storyOptions);
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
@@ -279,6 +285,11 @@ const App: React.FC = () => {
         const coreToUse = coreOverride || storyCore;
         if (!coreToUse.trim()) {
             setError("请输入故事核心。");
+            return;
+        }
+        if (!storyOptions.apiKey || !storyOptions.apiBaseUrl || !storyOptions.planningModel) {
+            setError("请先在设置中配置有效的API地址、密钥并选择规划模型。");
+            setIsSettingsOpen(true);
             return;
         }
         // If an override is used (from import or refinement), update the main state
@@ -299,7 +310,7 @@ const App: React.FC = () => {
             { 
                 id: 0, 
                 title: isRefinement ? "优化创作计划" : "第一步：生成完整创作计划",
-                model: 'gemini-2.5-flash', 
+                model: storyOptions.planningModel, 
                 content: null, 
                 status: 'pending', 
                 citations: [] 
@@ -367,6 +378,11 @@ const App: React.FC = () => {
     ) => {
         if (!storyOutline) {
             handleError("无法写入章节，缺少创作计划。请返回重试。");
+            return;
+        }
+        if (!storyOptions.writingModel) {
+            handleError("请先在设置中选择一个写作模型。");
+            setIsSettingsOpen(true);
             return;
         }
         
@@ -807,9 +823,11 @@ const App: React.FC = () => {
             }
         })();
         
-        const isWriteButtonDisabled = gameState === GameState.WRITING || !isNextChapterOutlined;
+        const isWriteButtonDisabled = gameState === GameState.WRITING || !isNextChapterOutlined || !storyOptions.writingModel;
         let writeButtonTooltip = isWriteButtonDisabled ? `请先在“细纲”模块为第 ${nextChapterIndex + 1} 章生成细纲分析。` : '';
         if (gameState === GameState.WRITING) writeButtonTooltip = "正在创作中...";
+        if (!storyOptions.writingModel) writeButtonTooltip = "请在设置中选择写作模型。";
+
 
         const TabButton: React.FC<{targetTab: ActiveTab; icon: React.ReactNode; label: string;}> = ({ targetTab, icon, label }) => (
              <button

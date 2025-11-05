@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { StoryOutline, GeneratedChapter, StoryModel, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
 import { generateChapterTitlesStream, generateDetailedOutlineStream, refineDetailedOutlineStream } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -177,7 +177,6 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     const [generationStatus, setGenerationStatus] = useState<string | null>(null);
     const [activeTitle, setActiveTitle] = useState<string | null>(null);
     const [userInput, setUserInput] = useState('');
-    const [outlineModel, setOutlineModel] = useState<StoryModel>('gemini-2.5-flash');
     const [error, setError] = useState<string | null>(null);
 
     // Iteration controls
@@ -196,7 +195,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setError(null);
         setActiveTitle(null);
         try {
-            const stream = await generateChapterTitlesStream(storyOutline, chapters);
+            const stream = await generateChapterTitlesStream(storyOutline, chapters, storyOptions);
             let fullText = '';
             for await (const chunk of stream) {
                 fullText += chunk.text;
@@ -250,7 +249,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         if (!activeTitle) return;
         setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutlineStream(storyOutline, chapters, activeTitle, userInput, outlineModel, storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutlineStream(storyOutline, chapters, activeTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -258,7 +257,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         if (!activeTitle) return;
         setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutlineStream(storyOutline, chapters, activeTitle, '', outlineModel, storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutlineStream(storyOutline, chapters, activeTitle, '', storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -285,7 +284,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setRefinementRequest('');
         
         await runIterativeOutlineGeneration(() => 
-            refineDetailedOutlineStream(originalOutlineForRefinement, refinementInput, activeTitle, storyOutline, outlineModel, storyOptions, { maxIterations, scoreThreshold })
+            refineDetailedOutlineStream(originalOutlineForRefinement, refinementInput, activeTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -431,38 +430,22 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     />
                                 </div>
                             </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                <div className="md:col-span-2">
-                                    <label htmlFor="outline-prompt" className="block text-xs font-medium text-slate-400 mb-1">
-                                        优化或指导 (可选)
-                                    </label>
-                                    <input
-                                        id="outline-prompt"
-                                        type="text"
-                                        value={userInput}
-                                        onChange={e => setUserInput(e.target.value)}
-                                        placeholder="例如：增加一个女性反派角色..."
-                                        className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm"
-                                        disabled={!!isLoading}
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="outline-model" className="block text-xs font-medium text-slate-400 mb-1">
-                                        创作/优化模型
-                                    </label>
-                                    <select
-                                        id="outline-model"
-                                        value={outlineModel}
-                                        onChange={e => setOutlineModel(e.target.value as StoryModel)}
-                                        className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm"
-                                        disabled={!!isLoading}
-                                    >
-                                        <option value="gemini-2.5-flash">gemini-2.5-flash (快速)</option>
-                                        <option value="gemini-2.5-pro">gemini-2.5-pro (高质量)</option>
-                                    </select>
-                                </div>
+                            
+                            <div>
+                                <label htmlFor="outline-prompt" className="block text-xs font-medium text-slate-400 mb-1">
+                                    优化或指导 (可选)
+                                </label>
+                                <input
+                                    id="outline-prompt"
+                                    type="text"
+                                    value={userInput}
+                                    onChange={e => setUserInput(e.target.value)}
+                                    placeholder="例如：增加一个女性反派角色..."
+                                    className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm"
+                                    disabled={!!isLoading}
+                                />
                             </div>
+
                             <button
                                 onClick={handleGenerateOutline}
                                 disabled={!!isLoading}

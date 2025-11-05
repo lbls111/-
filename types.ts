@@ -12,12 +12,19 @@ export enum GameState {
 
 export type ActiveTab = 'agent' | 'worldbook' | 'characters' | 'outline' | 'writing';
 
-export type StoryModel = 'gemini-2.5-pro' | 'gemini-2.5-flash';
 export type StoryLength = '超短篇(5-10章)' | '短篇(15-30章)' | '中篇(30-100章)' | '长篇(100章以上)';
+// FIX: Updated AuthorStyle to use Simplified Chinese characters to match usage in the app.
 export type AuthorStyle = '默认风格' | '爱潜水的乌贼' | '辰东' | '猫腻' | '会说话的肘子' | '我吃西红柿' | '方想' | '孑与2' | '卖报小郎君' | '宅猪' | '神医下山风格' | '老鹰吃小鸡' | '言归正传' | '远瞳' | '方千金';
 
 export interface StoryOptions {
-    writingModel: StoryModel;
+    // New Generic API Settings
+    apiBaseUrl: string;
+    apiKey: string;
+    availableModels: string[];
+    planningModel: string;
+    writingModel: string;
+    
+    // Original settings
     style: string;
     length: StoryLength;
     authorStyle: AuthorStyle;
