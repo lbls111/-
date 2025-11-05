@@ -47,87 +47,63 @@ const getAuthorStyleInstructions = (style: string): string => {
     return styles[style] || styles['默认风格'];
 };
 
-
-const createPrompt = (system: string, user: string, forCustomApi: boolean) => {
-    if (forCustomApi) {
-        return [{ role: "system", content: system }, { role: "user", content: user }];
-    }
-    return `${system}\n\n---\n\n${user}`;
+const createPrompt = (system: string, user: string): { role: string; content: string; }[] => {
+    return [{ role: "system", content: system }, { role: "user", content: user }];
 };
+
 
 // =================================================================
 // == ACTION-SPECIFIC PROMPT GENERATORS
 // =================================================================
 
-export const getSearchPrompts = (storyCore: string, options: StoryOptions, forCustomApi: boolean) => {
-    const system = `你是一个专精于网络小说市场的AI研究员和创意分析师。你的核心任务是进行深度搜索和分析，为一部小说的创作提供丰富、前沿、且极具可行性的素材和灵感。
-你的工作流程分为三个阶段：
-1.  **趋势分析**: 结合对2025年最新、最热门的网络小说题材和市场导向的理解，分析用户提供的“故事核心”的潜力所在。
-2.  **深度搜索与扩展**: 基于“故事核心”，从“角色刻画”、“世界构建”和“情节框架”三个维度，进行详细的资料搜索和创意发散。
-3.  **结构化报告**: 将所有研究成果以清晰、详细的列表形式呈现。你的报告将作为后续创作的基石。
+export const getSearchPrompts = (storyCore: string, options: StoryOptions): { role: string; content: string; }[] => {
+    const system = `你是一个专精于网络小说市场的AI研究员和创意分析师。
+你的核心任务是为用户的“故事核心”进行深度研究，并生成一份结构化的研究报告。
+你必须利用你庞大的知识库，模拟联网搜索的过程，确保你的分析是基于当前（2025年）最新的市场趋势和热门题材。
+你的报告需要清晰、详尽，并直接为后续的创作提供可行的素材。`;
 
-**输出要求**:
--   **不要使用JSON格式**。请使用清晰的Markdown格式，包含标题和列表。
--   **内容详尽**: 每一个要点都要提供具体、可操作的建议，而不是空泛的描述。
--   **紧扣核心**: 所有建议都必须围绕用户提供的“故事核心”展开，并为其服务。
--   **前瞻性**: 你的建议需要体现出对当前和未来（2025年）网文流行趋势的洞察。`;
-
-    const user = `### 任务：为以下故事核心进行深度研究
+    const user = `### 任务：为以下故事核心进行深度研究与分析
 
 **故事核心**: ${storyCore}
 **故事类型**: ${options.style}
 **仿写作者**: ${options.authorStyle}
 
-### 研究报告结构
+### 研究与报告指令
 
-请严格按照以下结构，为我生成一份详细的研究报告：
+请围绕上述“故事核心”，从以下几个方面进行研究，并为我生成一份详细的报告。请确保你的每一个观点都有事实和趋势作为依据。
 
 ---
 
-### **一、市场与趋势分析 (结合2025年导向)**
+### **一、市场与趋势分析 (模拟联网搜索，结合2025年导向)**
 
-*   **潜力与定位**: 分析这个故事核心在当前市场的潜力和最适合的细分赛道。
-*   **热门元素融合**: 提出3-5个可以与该核心巧妙融合的、当前或未来（2025年）的热门元素（例如：新怪谈、国风科幻、模拟经营、非对称对抗等）。
-*   **风格对标**: 结合 **${options.authorStyle}** 的风格，指出在执行上需要注意的关键点，以形成独特的市场竞争力。
+*   **潜力与定位**: 分析这个故事核心的潜力和最适合的细分赛道。
+*   **热门元素融合**: 列举3-5个可以与该核心巧妙融合的、当前或未来（2025年）的热门网络小说元素（例如：新怪谈、国风科幻、模拟经营等）。
+*   **风格对标**: 分析作家 **${options.authorStyle}** 的风格，并指出在创作中需要注意的关键点，以形成独特的市场竞争力。
 
 ### **二、角色刻画深度探索**
 
-*   **主角弧光建议**:
-    *   **核心矛盾**: 提出一个能贯穿主角始终的、深刻的内在矛盾。
-    *   **成长路径**: 设计一条非线性的、充满反转的成长路径。
-    *   **高光时刻**: 构思2-3个能让读者印象深刻的主角高光时刻的关键场景。
-*   **黄金配角设计**:
-    *   **功能性配角**: 建议3种不同功能的关键配角（例如：导师、对手、伙伴），并简述其设定。
-    *   **化学反应**: 设计主角与其中一位配角之间独特的、充满张力的互动模式。
-*   **魅力反派塑造**:
-    *   **理念对立**: 为反派设计一个与主角对立，但又能自圆其说的核心理念。
-    *   **压迫感来源**: 指出反派给主角带来压迫感的具体方式（实力、智力、资源等）。
+*   **主角弧光建议**: 基于经典的角色成长模型，为主角设计一条充满反转的成长路径，并构思2-3个高光时刻。
+*   **黄金配角设计**: 基于“黄金配角”的设计理论，建议3种不同功能的关键配角（导师、对手、伙伴）。
+*   **魅力反派塑造**: 基于“如何塑造令人难忘的反派”的技巧，为反派设计一个与主角对立但又能自圆其说的核心理念。
 
 ### **三、世界构建扩展**
 
-*   **核心设定深化**:
-    *   **力量体系**: 基于故事核心，提出一个更具体、更有趣的力量体系或核心规则的细节。
-    *   **社会结构**: 构思一个与核心设定紧密相关的独特社会或组织结构。
-    *   **历史谜团**: 设定一个与世界观相关的、能引发读者好奇心的历史谜团或“坑”。
-*   **环境与氛围**:
-    *   **标志性地点**: 设计一个充满想象力且具有故事功能的关键地点。
-    *   **感官细节**: 提供一些能增强世界沉浸感的具体感官细节（声音、气味、视觉元素等）。
+*   **核心设定深化**: 基于相关的神话、历史或科学概念，为故事提出一个更具体、更有趣的力量体系或核心规则。
+*   **环境与氛围**: 设计一个充满想象力且具有故事功能的关键地点。
 
 ### **四、情节框架与爽点设计**
 
-*   **开篇钩子**: 设计一个能在前三章内迅速抓住读者的“黄金三章”情节钩子。
-*   **中期核心矛盾**: 构思一个能支撑故事中期的、不断升级的核心矛盾事件。
-*   **爽点节奏**: 提出一个适用于该题材的“爽点/虐点”分布节奏的建议（例如：三章一小爽，十章一大爽）。
-*   **创新反转**: 至少构思一个能颠覆读者预期的情节反转。
+*   **开篇钩子**: 基于“网络小说黄金三章”的写作技巧，设计一个能迅速抓住读者的开篇情节。
+*   **创新反转**: 基于经典或新颖的“情节反转”案例，为故事构思至少一个能颠覆读者预期的反转。
 
 ---
 
 请开始生成研究报告。`;
 
-    return createPrompt(system, user, forCustomApi);
-};
+    return createPrompt(system, user);
+}
 
-export const getStoryOutlinePrompts = (storyCore: string, options: StoryOptions, forCustomApi: boolean) => {
+export const getStoryOutlinePrompts = (storyCore: string, options: StoryOptions): { role: string; content: string; }[] => {
     const system = `你是一个顶级的网络小说作家和策划人，精通市场分析和故事架构。你的任务是根据用户的核心创意和要求，生成一份完整、专业、高度结构化的小说创作大纲。
 你的输出必须是一个单独的、格式严谨的JSON对象。不要在JSON对象之外添加任何解释或额外的文本。
 
@@ -215,16 +191,15 @@ export const getStoryOutlinePrompts = (storyCore: string, options: StoryOptions,
 \`\`\`
 
 **重要指令**:
-// FIX: Escaped backticks in the prompt to prevent template literal parsing errors.
 - **Worldbook**: \`worldCategories\` 必须包含至少 **5个** 与故事类型高度相关的分类，每个分类下至少有 **2个** 详细的条目。例如，玄幻小说可以有“境界划分”、“灵草图鉴”、“历史纪元”、“宗门势力”、“禁地传说”等分类。请充分发挥创造力。
 - **Characters**: 必须创建至少 **3个** 核心角色（包括主角）。\`customFields\` 必须包含至少 **1个** 与世界观紧密结合的自定义条目。
 
 请确保JSON的完整性和正确性。现在，开始生成。`;
 
-    return createPrompt(system, user, forCustomApi);
-};
+    return createPrompt(system, user);
+}
 
-export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: GeneratedChapter[], options: StoryOptions, forCustomApi: boolean) => {
+export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: GeneratedChapter[], options: StoryOptions): { role: string; content: string; }[] => {
     const system = `你是一个网络小说编辑，擅长构思吸引人的章节标题。
 你的任务是根据故事大纲和已有的章节，为后续的10个章节生成标题。
 你的输出必须是一个JSON数组的字符串形式，例如： \`["标题一", "标题二", ...]\`。
@@ -235,10 +210,10 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
 
 请为第 ${chapters.length + 1} 章到第 ${chapters.length + 10} 章生成10个章节标题。`;
 
-    return createPrompt(system, user, forCustomApi);
-};
+    return createPrompt(system, user);
+}
 
-export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }, forCustomApi: boolean) => {
+export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }): { role: string; content: string; }[] => {
     const system = `你是一个由多个专家组成的AI写作顾问团队，包括首席编剧、网文分析师和第三方评论员。
 你的任务是为一个指定的章节标题，通过一个【创作-评估-优化】的迭代循环，生成一份极其详尽、深刻、专业的章节细纲。
 最终输出必须是一个包含完整迭代历史的单一JSON对象。不要在JSON对象之外添加任何解释或额外的文本。
@@ -297,10 +272,10 @@ export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: Gener
 ### 任务
 请启动【创作-评估-优化】流程，为章节“${chapterTitle}”生成最终的细纲分析JSON。`;
 
-    return createPrompt(system, user, forCustomApi);
-};
+    return createPrompt(system, user);
+}
 
-export const getRefineDetailedOutlinePrompts = (originalOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }, forCustomApi: boolean) => {
+export const getRefineDetailedOutlinePrompts = (originalOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }): { role: string; content: string; }[] => {
     const system = `你是一个AI写作顾问团队，专门负责根据用户的反馈来优化已有的章节细纲。
 你的工作流程和能力与初次生成时完全相同：【创作-评估-优化】的迭代循环。
 关键区别在于，你的第一版草稿不是从零开始，而是基于用户提供的“原始细纲”和“优化指令”进行修改。
@@ -321,10 +296,10 @@ ${originalOutlineJson}
 
 请根据我的核心优化指令，对原始细纲进行修改，并启动新一轮的【创作-评估-优化】流程，生成最终的优化版细纲JSON。`;
 
-     return createPrompt(system, user, forCustomApi);
+    return createPrompt(system, user);
 }
 
-export const getChapterPrompts = (outline: StoryOutline, historyChapters: GeneratedChapter[], options: StoryOptions, detailedChapterOutline: DetailedOutlineAnalysis, forCustomApi: boolean) => {
+export const getChapterPrompts = (outline: StoryOutline, historyChapters: GeneratedChapter[], options: StoryOptions, detailedChapterOutline: DetailedOutlineAnalysis): { role: string; content: string; }[] => {
     const system = `${getAuthorStyleInstructions(options.authorStyle)}
 
 **## 核心任务**
@@ -367,10 +342,10 @@ ${JSON.stringify(detailedChapterOutline, null, 2)}
 
 现在，请进入你的“${options.authorStyle}”人格，开始创作。确保内容不少于2000字。`;
 
-    return createPrompt(system, user, forCustomApi);
-};
+    return createPrompt(system, user);
+}
 
-export const getEditChapterTextPrompts = (originalText: string, instruction: string, options: StoryOptions, forCustomApi: boolean) => {
+export const getEditChapterTextPrompts = (originalText: string, instruction: string, options: StoryOptions): { role: string; content: string; }[] => {
     const system = `${getAuthorStyleInstructions(options.authorStyle)}
 你的任务是作为一个文本编辑器，根据用户的指令，对提供的章节原文进行精确、局部的修改。
 - **保持原文**: 只修改指令中提到的部分。其余所有文字、段落、标点符号都必须保持原样。
@@ -385,10 +360,10 @@ ${originalText}
 ---
 
 请根据指令，输出修改后的全文。`;
-    return createPrompt(system, user, forCustomApi);
+    return createPrompt(system, user);
 }
 
-export const getCharacterInteractionPrompts = (char1: CharacterProfile, char2: CharacterProfile, outline: StoryOutline, options: StoryOptions, forCustomApi: boolean) => {
+export const getCharacterInteractionPrompts = (char1: CharacterProfile, char2: CharacterProfile, outline: StoryOutline, options: StoryOptions): { role: string; content: string; }[] => {
     const system = `${getAuthorStyleInstructions(options.authorStyle)}
 你的任务是创作一个生动的角色互动短场景。
 - **聚焦互动**: 场景的核心是两个角色之间的对话、动作和反应。
@@ -401,10 +376,10 @@ export const getCharacterInteractionPrompts = (char1: CharacterProfile, char2: C
 *   **故事背景**: ${outline.plotSynopsis}
 
 请创作一段他们两人之间的互动场景。`;
-     return createPrompt(system, user, forCustomApi);
+    return createPrompt(system, user);
 }
 
-export const getNewCharacterProfilePrompts = (storyOutline: StoryOutline, characterPrompt: string, options: StoryOptions, forCustomApi: boolean) => {
+export const getNewCharacterProfilePrompts = (storyOutline: StoryOutline, characterPrompt: string, options: StoryOptions): { role: string; content: string; }[] => {
     const system = `你是一个角色设计师。你的任务是根据用户提供的简单概念，设计一个完整、深刻、符合故事大纲的角色，并以一个严格的JSON对象格式输出。
 不要添加任何额外的解释，只输出JSON。`;
     const user = `### 故事背景
@@ -440,5 +415,5 @@ export const getNewCharacterProfilePrompts = (storyOutline: StoryOutline, charac
 }
 \`\`\`
 `;
-    return createPrompt(system, user, forCustomApi);
+    return createPrompt(system, user);
 }

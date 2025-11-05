@@ -179,3 +179,10 @@ export interface FinalDetailedOutline extends DetailedOutlineAnalysis {
   finalVersion: number;
   optimizationHistory: OptimizationHistoryEntry[];
 }
+
+// New type for the logging system
+export interface LogEntry {
+  timestamp: string;
+  type: 'error' | 'info' | 'success';
+  message: string;
+}

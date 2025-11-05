@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation } from '../types';
 
 // Helper for streaming responses from our backend
 async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
@@ -65,6 +65,7 @@ async function postFetch<T>(endpoint: string, body: any): Promise<T> {
     return response.json();
 }
 
+// FIX: Removed apiMode from the options type as it's no longer needed.
 export const listModels = async (options: { apiBaseUrl: string, apiKey: string }): Promise<string[]> => {
     return postFetch<string[]>('/api', {
         action: 'listModels',
@@ -73,8 +74,8 @@ export const listModels = async (options: { apiBaseUrl: string, apiKey: string }
 }
 
 // NON-STREAMING: The initial research step before planning.
-export const performSearch = (storyCore: string, options: StoryOptions): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
+export const performSearch = (storyCore: string, options: StoryOptions): Promise<{ text: string; citations: Citation[] }> => {
+    return postFetch<{ text: string; citations: Citation[] }>('/api', {
         action: 'performSearch',
         payload: { storyCore, options }
     });

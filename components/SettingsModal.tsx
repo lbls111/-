@@ -52,11 +52,8 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
   };
 
   const handleFetchModels = async () => {
-    const isTryingCustom = localOptions.apiBaseUrl || localOptions.apiKey;
-    const isCustomConfigValid = localOptions.apiBaseUrl && localOptions.apiKey;
-
-    if (isTryingCustom && !isCustomConfigValid) {
-        setModelError("请输入有效的API地址和密钥，或将两者都留空以使用默认设置。");
+    if (!localOptions.apiBaseUrl || !localOptions.apiKey) {
+        setModelError("API地址和密钥为必填项。");
         return;
     }
 
@@ -67,7 +64,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
     try {
         const models = await listModels({
             apiBaseUrl: localOptions.apiBaseUrl,
-            apiKey: localOptions.apiKey
+            apiKey: localOptions.apiKey,
         });
 
         // Filter for models that are likely for chat/completions
@@ -114,20 +111,18 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
   };
 
   const handleResetToDefault = () => {
-      // Restore not just API keys, but also the model selections to default.
-      setLocalOptions(prev => ({
-          ...prev,
-          apiBaseUrl: DEFAULT_STORY_OPTIONS.apiBaseUrl,
-          apiKey: DEFAULT_STORY_OPTIONS.apiKey,
-          availableModels: DEFAULT_STORY_OPTIONS.availableModels,
-          searchModel: DEFAULT_STORY_OPTIONS.searchModel,
-          planningModel: DEFAULT_STORY_OPTIONS.planningModel,
-          writingModel: DEFAULT_STORY_OPTIONS.writingModel,
-      }));
+      // Preserve API credentials when resetting
+      const apiCreds = {
+          apiBaseUrl: localOptions.apiBaseUrl,
+          apiKey: localOptions.apiKey,
+          availableModels: localOptions.availableModels,
+      };
+      setLocalOptions({...DEFAULT_STORY_OPTIONS, ...apiCreds});
       setModelError(null);
       setConnectionSuccess(false);
   };
-
+  
+  const modelOptions = localOptions.availableModels;
 
   return (
     <div 
@@ -155,54 +150,55 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
         <div className="space-y-6">
           <div className="border-b border-white/10 pb-6">
               <div className="flex justify-between items-center mb-4">
-                 <h3 className="text-lg font-bold text-teal-400">API 连接设置</h3>
+                 <h3 className="text-lg font-bold text-teal-400">API 连接设置 (必需)</h3>
                  <button onClick={handleResetToDefault} className="text-xs font-semibold text-slate-400 hover:text-slate-200 bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded-md transition-colors">
-                    恢复默认设置
+                    恢复默认参数
                  </button>
               </div>
-              <p className="text-xs text-slate-500 mb-4">
-                将下方留空可使用AI Studio内置的Gemini API。您也可以连接到任何与OpenAI兼容的第三方API。
-              </p>
-              <div className="space-y-4">
-                  <div>
-                      <label htmlFor="api-base-url" className="block text-sm font-medium text-slate-300 mb-2">
-                          API 地址 (Base URL)
-                      </label>
-                      <input
-                          id="api-base-url"
-                          type="text"
-                          value={localOptions.apiBaseUrl}
-                          onChange={e => handleLocalOptionChange('apiBaseUrl', e.target.value)}
-                          placeholder="留空以使用默认设置"
-                          className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
-                      />
-                  </div>
-                   <div>
-                      <label htmlFor="api-key" className="block text-sm font-medium text-slate-300 mb-2">
-                          API 密钥 (API Key)
-                      </label>
-                      <input
-                          id="api-key"
-                          type="password"
-                          value={localOptions.apiKey}
-                          onChange={e => handleLocalOptionChange('apiKey', e.target.value)}
-                          placeholder="留空以使用默认设置"
-                          className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
-                      />
-                  </div>
-                  <div>
-                      <button
-                        onClick={handleFetchModels}
-                        disabled={isLoadingModels}
-                        className="w-full flex items-center justify-center px-4 py-2 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-500 transition-colors shadow-md disabled:bg-slate-600 disabled:cursor-not-allowed"
-                      >
-                        {isLoadingModels ? <LoadingSpinner className="w-5 h-5 mr-2" /> : null}
-                        {isLoadingModels ? '连接中...' : '连接 & 获取可用模型'}
-                      </button>
-                      {modelError && <p className="text-xs text-red-400 mt-2">{modelError}</p>}
-                      {connectionSuccess && <p className="text-xs text-green-400 mt-2">连接成功！已获取 {localOptions.availableModels.length} 个模型。</p>}
-                  </div>
-              </div>
+              
+                <div className="space-y-4">
+                     <div className='space-y-4 p-4 border border-slate-700 rounded-lg bg-slate-900/50'>
+                         <p className="text-sm text-slate-400">本应用需要连接到一个与OpenAI兼容的外部API才能工作，例如Groq, SillyTavern等。</p>
+                        <div>
+                            <label htmlFor="api-base-url" className="block text-sm font-medium text-slate-300 mb-2">
+                                API 地址 (Base URL)
+                            </label>
+                            <input
+                                id="api-base-url"
+                                type="text"
+                                value={localOptions.apiBaseUrl}
+                                onChange={e => handleLocalOptionChange('apiBaseUrl', e.target.value)}
+                                placeholder="例如: https://api.groq.com/openai"
+                                className="w-full p-3 bg-slate-800/70 border border-slate-600 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
+                            />
+                        </div>
+                         <div>
+                            <label htmlFor="api-key" className="block text-sm font-medium text-slate-300 mb-2">
+                                API 密钥 (API Key)
+                            </label>
+                            <input
+                                id="api-key"
+                                type="password"
+                                value={localOptions.apiKey}
+                                onChange={e => handleLocalOptionChange('apiKey', e.target.value)}
+                                placeholder="请输入您的API密钥"
+                                className="w-full p-3 bg-slate-800/70 border border-slate-600 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
+                            />
+                        </div>
+                        <div>
+                            <button
+                              onClick={handleFetchModels}
+                              disabled={isLoadingModels}
+                              className="w-full flex items-center justify-center px-4 py-2 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-500 transition-colors shadow-md disabled:bg-slate-600 disabled:cursor-not-allowed"
+                            >
+                              {isLoadingModels ? <LoadingSpinner className="w-5 h-5 mr-2" /> : null}
+                              {isLoadingModels ? '连接中...' : '连接 & 获取可用模型'}
+                            </button>
+                            {modelError && <p className="text-xs text-red-400 mt-2">{modelError}</p>}
+                            {connectionSuccess && <p className="text-xs text-green-400 mt-2">连接成功！已获取 {localOptions.availableModels.length} 个模型。</p>}
+                        </div>
+                    </div>
+                </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -215,19 +211,11 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                     value={localOptions.searchModel}
                     onChange={e => handleLocalOptionChange('searchModel', e.target.value)}
                     className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
-                    disabled={localOptions.apiBaseUrl !== '' && localOptions.availableModels.length === 0}
                 >
-                  {localOptions.apiBaseUrl === '' ? (
-                    <>
-                        <option value="gemini-2.5-flash">gemini-2.5-flash (默认)</option>
-                        <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                    </>
+                  {modelOptions.length > 0 ? (
+                     modelOptions.map(model => <option key={model} value={model}>{model}</option>)
                   ) : (
-                    localOptions.availableModels.length > 0 ? (
-                       localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)
-                    ) : (
-                       <option value="">请先获取模型</option>
-                    )
+                     <option value="">请先连接并获取模型</option>
                   )}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
@@ -243,19 +231,11 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                     value={localOptions.planningModel}
                     onChange={e => handleLocalOptionChange('planningModel', e.target.value)}
                     className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
-                    disabled={localOptions.apiBaseUrl !== '' && localOptions.availableModels.length === 0}
                 >
-                  {localOptions.apiBaseUrl === '' ? (
-                    <>
-                        <option value="gemini-2.5-flash">gemini-2.5-flash (默认)</option>
-                        <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                    </>
+                  {modelOptions.length > 0 ? (
+                     modelOptions.map(model => <option key={model} value={model}>{model}</option>)
                   ) : (
-                    localOptions.availableModels.length > 0 ? (
-                       localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)
-                    ) : (
-                       <option value="">请先获取模型</option>
-                    )
+                     <option value="">请先连接并获取模型</option>
                   )}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
@@ -272,20 +252,12 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                     value={localOptions.writingModel}
                     onChange={e => handleLocalOptionChange('writingModel', e.target.value)}
                     className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
-                    disabled={localOptions.apiBaseUrl !== '' && localOptions.availableModels.length === 0}
                  >
-                   {localOptions.apiBaseUrl === '' ? (
-                    <>
-                        <option value="gemini-2.5-pro">gemini-2.5-pro (默认)</option>
-                        <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                    </>
-                  ) : (
-                    localOptions.availableModels.length > 0 ? (
-                       localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)
-                    ) : (
-                       <option value="">请先获取模型</option>
-                    )
-                  )}
+                   {modelOptions.length > 0 ? (
+                      modelOptions.map(model => <option key={model} value={model}>{model}</option>)
+                   ) : (
+                     <option value="">请先连接并获取模型</option>
+                   )}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">用于生成章节正文。建议选择质量高的模型。</p>
             </div>

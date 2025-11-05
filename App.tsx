@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
-import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline } from './types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry } from './types';
 import { performSearch, generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
 
 import SparklesIcon from './components/icons/SparklesIcon';
@@ -21,6 +21,8 @@ import OutlineGenerator from './components/OutlineGenerator';
 import NotebookTextIcon from './components/icons/NotebookTextIcon';
 import WorldbookEditor from './components/WorldbookEditor';
 import UploadIcon from './components/icons/UploadIcon';
+import ClipboardListIcon from './components/icons/ClipboardListIcon';
+import LogViewer from './components/LogViewer';
 
 
 const storyStyles = {
@@ -70,9 +72,9 @@ export const DEFAULT_STORY_OPTIONS: StoryOptions = {
     apiBaseUrl: '',
     apiKey: '',
     availableModels: [],
-    searchModel: 'gemini-2.5-flash',
-    planningModel: 'gemini-2.5-flash',
-    writingModel: 'gemini-2.5-pro',
+    searchModel: '',
+    planningModel: '',
+    writingModel: '',
     style: '爽文 (重生复仇打脸)',
     length: '短篇(15-30章)',
     authorStyle: '默认风格',
@@ -87,7 +89,7 @@ const getInitialState = () => {
     try {
       const savedSession = localStorage.getItem('saved_story_session');
       if (savedSession) {
-        const { storyOutline, chapters, storyOptions, storyCore, generatedTitles, outlineHistory } = JSON.parse(savedSession);
+        const { storyOutline, chapters, storyOptions, storyCore, generatedTitles, outlineHistory, activeOutlineTitle } = JSON.parse(savedSession);
         
         // Data Migration: Handle old worldEntries format
         if (storyOutline && storyOutline.worldEntries && !storyOutline.worldCategories) {
@@ -108,6 +110,7 @@ const getInitialState = () => {
                 initialStoryOptions: mergedOptions,
                 initialGeneratedTitles: generatedTitles || [],
                 initialOutlineHistory: outlineHistory || {},
+                initialActiveOutlineTitle: activeOutlineTitle || null,
             };
         }
         
@@ -122,6 +125,7 @@ const getInitialState = () => {
             initialStoryOptions: mergedOptions,
             initialGeneratedTitles: generatedTitles || [],
             initialOutlineHistory: outlineHistory || {},
+            initialActiveOutlineTitle: activeOutlineTitle || null,
           };
         }
       }
@@ -139,6 +143,7 @@ const getInitialState = () => {
       initialStoryOptions: DEFAULT_STORY_OPTIONS,
       initialGeneratedTitles: [],
       initialOutlineHistory: {},
+      initialActiveOutlineTitle: null,
     };
 };
 
@@ -186,7 +191,8 @@ const App: React.FC = () => {
         initialChapters, 
         initialStoryOptions,
         initialGeneratedTitles,
-        initialOutlineHistory
+        initialOutlineHistory,
+        initialActiveOutlineTitle
     } = useMemo(() => getInitialState(), []);
 
     const [gameState, setGameState] = useState<GameState>(initialGameState);
@@ -206,12 +212,54 @@ const App: React.FC = () => {
     // New state for outline generator
     const [generatedTitles, setGeneratedTitles] = useState<string[]>(initialGeneratedTitles);
     const [outlineHistory, setOutlineHistory] = useState<Record<string, string>>(initialOutlineHistory);
+    const [activeOutlineTitle, setActiveOutlineTitle] = useState<string | null>(initialActiveOutlineTitle);
     
     // New state for plan refinement
     const [planRefinementInput, setPlanRefinementInput] = useState('');
+    
+    // New state for logging
+    const [logs, setLogs] = useState<LogEntry[]>([]);
+    const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
 
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
+
+    // --- LOGGING SYSTEM ---
+    useEffect(() => {
+        // Load logs from localStorage on initial mount
+        try {
+            const savedLogs = localStorage.getItem('app_logs');
+            if (savedLogs) {
+                setLogs(JSON.parse(savedLogs));
+            }
+        } catch (e) {
+            console.error("Failed to load logs from localStorage", e);
+        }
+    }, []);
+
+    useEffect(() => {
+        // Save logs to localStorage whenever they change
+        try {
+            localStorage.setItem('app_logs', JSON.stringify(logs));
+        } catch (e) {
+            console.error("Failed to save logs to localStorage", e);
+        }
+    }, [logs]);
+    
+    const addLog = useCallback((message: string, type: LogEntry['type']) => {
+        const newLog: LogEntry = {
+            timestamp: new Date().toISOString(),
+            type,
+            message,
+        };
+        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 50)); // Keep last 50 logs
+    }, []);
+    
+    const handleClearLogs = () => {
+        setLogs([]);
+        addLog("日志已清除。", 'info');
+    };
+
 
     // Auto-saving logic
     useEffect(() => {
@@ -222,11 +270,12 @@ const App: React.FC = () => {
                 storyOptions,
                 storyCore,
                 generatedTitles,
-                outlineHistory
+                outlineHistory,
+                activeOutlineTitle,
             };
             localStorage.setItem('saved_story_session', JSON.stringify(sessionToSave));
         }
-    }, [storyOutline, chapters, storyOptions, gameState, storyCore, generatedTitles, outlineHistory]);
+    }, [storyOutline, chapters, storyOptions, gameState, storyCore, generatedTitles, outlineHistory, activeOutlineTitle]);
 
 
     const scrollToBottom = (ref: React.RefObject<HTMLDivElement>) => {
@@ -256,6 +305,7 @@ const App: React.FC = () => {
     const handleError = (message: string, stepId?: number) => {
         setError(message);
         setGameState(GameState.ERROR);
+        addLog(message, 'error');
         if (stepId !== undefined) {
             setThoughtSteps(prev => prev.map(s => s.id === stepId ? { ...s, status: 'error' } : s));
         }
@@ -265,10 +315,12 @@ const App: React.FC = () => {
         setStoryOutline(finalOutline);
         setGameState(GameState.PLANNING_COMPLETE);
         setActiveTab('outline');
+        addLog("创作计划生成成功。", 'success');
         
         try {
             const titles = await generateChapterTitles(finalOutline, [], storyOptions);
             setGeneratedTitles(titles);
+            addLog(`已自动生成 ${titles.length} 个初始章节标题。`, 'info');
         } catch(e: any) {
             handleError("自动生成初始章节标题失败: " + e.message, undefined);
         }
@@ -281,10 +333,10 @@ const App: React.FC = () => {
             return;
         }
         
-        if (!storyOptions.searchModel || !storyOptions.planningModel || !storyOptions.writingModel) {
-             handleError("错误：缺少必要的模型。请在设置中选择搜索、规划和写作模型，或恢复默认设置。");
-             setIsSettingsOpen(true);
-             return;
+        if (!storyOptions.apiBaseUrl || !storyOptions.apiKey) {
+            setError("API 地址和密钥为必填项。请在“设置”中填写您的 API 凭据。");
+            setIsSettingsOpen(true);
+            return;
         }
 
         if (coreOverride && coreOverride !== storyCore) {
@@ -297,9 +349,11 @@ const App: React.FC = () => {
         setActiveTab('agent');
         setGeneratedTitles([]);
         setOutlineHistory({});
+        setActiveOutlineTitle(null);
+        addLog(`启动AI代理，核心创意: "${coreToUse.substring(0, 50)}..."`, 'info');
         
         const initialSteps: ThoughtStep[] = [
-            { id: 0, title: "第一步：深度搜索与研究", model: storyOptions.searchModel, content: null, status: 'pending' },
+            { id: 0, title: "第一步：深度搜索与研究", model: storyOptions.searchModel, content: null, status: 'pending', citations: [] },
             { id: 1, title: "第二步：生成完整创作计划", model: storyOptions.planningModel, content: null, status: 'pending' }
         ];
         setThoughtSteps(initialSteps);
@@ -312,7 +366,7 @@ const App: React.FC = () => {
             setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running' } : s));
             const searchResponse = await performSearch(coreToUse, storyOptions);
             researchText = searchResponse.text;
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: researchText } : s));
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: researchText, citations: searchResponse.citations } : s));
         } catch (e: any) {
             console.error("AI代理搜索步骤失败。", e);
             if (e instanceof Error) handleError(e.message, 0);
@@ -363,12 +417,6 @@ const App: React.FC = () => {
             return;
         }
         
-        if (!storyOptions.writingModel) {
-            handleError("错误：缺少写作模型。请在设置中选择一个模型或恢复默认设置。");
-            setIsSettingsOpen(true);
-            return;
-        }
-        
         let detailedOutlineForChapter: DetailedOutlineAnalysis;
         try {
             const finalOutline = extractAndParseJson<FinalDetailedOutline>(
@@ -392,6 +440,7 @@ const App: React.FC = () => {
         setActiveTab('writing');
         setGameState(GameState.WRITING);
         setError(null);
+        addLog(`开始撰写章节: "${chapterTitle}"`, 'info');
         
         const newChapterId = (historyChapters[historyChapters.length - 1]?.id || 0) + 1;
         const newChapter: GeneratedChapter = {
@@ -471,6 +520,7 @@ const App: React.FC = () => {
 
                 if (finalContent.trim() === "" && finalThought.trim() !== "") {
                      setError("错误: AI在完成思考过程后停止了，未能生成正文。请尝试【重新生成】。");
+                     addLog("章节生成失败: AI仅生成了思考过程。", 'error');
                      finalContent = ""; // Keep content empty on this specific error
                 }
 
@@ -478,6 +528,7 @@ const App: React.FC = () => {
                 // Only thought process was generated
                 finalThought = fullText.substring(thoughtStartIndex + thoughtStartMarker.length).trim();
                 setError("错误: AI在完成思考过程后停止了，未能生成正文。请尝试【重新生成】。");
+                addLog("章节生成失败: AI仅生成了思考过程。", 'error');
                 finalContent = "";
             } else {
                 // No markers found, treat the whole thing as content (should not happen with new prompt)
@@ -491,6 +542,7 @@ const App: React.FC = () => {
                     : c
             ));
             setGameState(GameState.CHAPTER_COMPLETE);
+            addLog(`章节 "${finalTitle}" 创作完成。`, 'success');
 
         } catch (e:any) {
             handleError(e.message || "章节生成过程中发生未知错误。", undefined);
@@ -522,6 +574,7 @@ const App: React.FC = () => {
         if(!lastChapter || lastChapter.status !== 'complete') return;
         
         setIsEditing(true);
+        addLog(`开始微调最新章节... 指令: ${editInput}`, 'info');
 
         try {
             const response = await editChapterText(lastChapter.content, editInput, storyOptions);
@@ -530,8 +583,10 @@ const App: React.FC = () => {
                 c.id === lastChapter.id ? { ...c, content: newContent } : c
             ));
             setEditInput('');
+            addLog('文本微调成功。', 'success');
         } catch (e: any) {
            setError(`文本修改失败: ${e.message}`);
+           addLog(`文本微调失败: ${e.message}`, 'error');
         } finally {
             setIsEditing(false);
         }
@@ -566,10 +621,12 @@ const App: React.FC = () => {
             setChapters([]);
             setGeneratedTitles([]);
             setOutlineHistory({});
+            setActiveOutlineTitle(null);
             setThoughtSteps([]);
             setError(null);
             setGameState(GameState.PLANNING_COMPLETE);
             setActiveTab('agent');
+            addLog("项目已重置，保留核心创意和设置。", 'info');
             // Keep storyCore and storyOptions
             // Trigger a re-plan
             startAgent();
@@ -579,13 +636,14 @@ const App: React.FC = () => {
     const handleNewProject = () => {
         if (window.confirm("确定要开始一个新项目吗？所有未导出的内容都将丢失。")) {
             localStorage.removeItem('saved_story_session');
+            localStorage.removeItem('app_logs');
             window.location.reload();
         }
     };
 
     const handleExport = async () => {
         if (gameState === GameState.INITIAL && !storyCore && !storyOutline) {
-            setError("没有可导出的内容。请输入核心创意或生成计划后再试。");
+            handleError("没有可导出的内容。请输入核心创意或生成计划后再试。");
             return;
         }
 
@@ -596,6 +654,7 @@ const App: React.FC = () => {
             storyCore,
             generatedTitles,
             outlineHistory,
+            activeOutlineTitle,
         };
 
         const jsonString = JSON.stringify(exportData, null, 2);
@@ -617,13 +676,16 @@ const App: React.FC = () => {
                 const writable = await handle.createWritable();
                 await writable.write(blob);
                 await writable.close();
+                addLog(`项目已成功导出为 ${fileName}`, 'success');
                 return; // Early return on success
             } catch (err: any) {
                 // AbortError is expected if the user cancels the save dialog.
                 if (err.name !== 'AbortError') {
                     console.error("文件系统访问API错误:", err);
+                    addLog(`使用高级导出模式失败: ${err.message}`, 'error');
                     // Fall through to legacy method on other errors
                 } else {
+                    addLog("导出操作已取消。", 'info');
                     return; // User cancelled, do nothing.
                 }
             }
@@ -638,6 +700,7 @@ const App: React.FC = () => {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        addLog(`项目已成功导出为 ${fileName} (使用备用模式)。`, 'success');
     };
     
     const handleImportClick = () => {
@@ -663,6 +726,7 @@ const App: React.FC = () => {
                 let coreToLoad: string = data.storyCore || '';
                 let titlesToLoad: string[] = data.generatedTitles || [];
                 let historyToLoad: Record<string, string> = data.outlineHistory || {};
+                let activeTitleToLoad: string | null = data.activeOutlineTitle || null;
                 
                 // Case 1: Full project file with storyOutline
                 if (data.storyOutline && typeof data.storyOutline === 'object') {
@@ -692,6 +756,7 @@ const App: React.FC = () => {
                     chaptersToLoad = [];
                     titlesToLoad = [];
                     historyToLoad = {};
+                    activeTitleToLoad = null;
                 }
 
                 setStoryOutline(storyOutlineToLoad);
@@ -700,7 +765,9 @@ const App: React.FC = () => {
                 setStoryCore(coreToLoad);
                 setGeneratedTitles(titlesToLoad);
                 setOutlineHistory(historyToLoad);
+                setActiveOutlineTitle(activeTitleToLoad);
                 setError(null);
+                addLog(`成功导入文件: ${file.name}`, 'success');
 
                 if (storyOutlineToLoad) {
                     // If we have a full outline, go to the workspace
@@ -857,6 +924,9 @@ const App: React.FC = () => {
                          <button onClick={handleExport} className="p-2 rounded-full hover:bg-slate-700/50 transition-colors" title="导出故事">
                             <DownloadIcon className="w-6 h-6 text-slate-300"/>
                         </button>
+                        <button onClick={() => setIsLogViewerOpen(true)} className="p-2 rounded-full hover:bg-slate-700/50 transition-colors" title="查看日志">
+                            <ClipboardListIcon className="w-6 h-6 text-slate-300"/>
+                        </button>
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-full hover:bg-slate-700/50 transition-colors" title="设置">
                             <SettingsIcon className="w-6 h-6 text-slate-300"/>
                         </button>
@@ -951,6 +1021,8 @@ const App: React.FC = () => {
                                 outlineHistory={outlineHistory}
                                 setOutlineHistory={setOutlineHistory}
                                 storyOptions={storyOptions}
+                                activeOutlineTitle={activeOutlineTitle}
+                                setActiveOutlineTitle={setActiveOutlineTitle}
                              />
                         )}
                         {activeTab === 'writing' && (
@@ -1086,6 +1158,12 @@ const App: React.FC = () => {
                 onClose={() => setIsSettingsOpen(false)}
                 options={storyOptions}
                 setOptions={setStoryOptions}
+            />
+            <LogViewer
+                isOpen={isLogViewerOpen}
+                onClose={() => setIsLogViewerOpen(false)}
+                logs={logs}
+                onClear={handleClearLogs}
             />
             {gameState === GameState.INITIAL || (gameState === GameState.ERROR && !storyOutline) ? renderInitialView() : renderAgentWorkspace()}
         </div>

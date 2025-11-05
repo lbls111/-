@@ -15,6 +15,8 @@ interface OutlineGeneratorProps {
     outlineHistory: Record<string, string>;
     setOutlineHistory: React.Dispatch<React.SetStateAction<Record<string, string>>>;
     storyOptions: StoryOptions;
+    activeOutlineTitle: string | null;
+    setActiveOutlineTitle: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const AnalysisField: React.FC<{ label: string; value: any; color: string }> = ({ label, value, color }) => {
@@ -170,10 +172,11 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     setGeneratedTitles, 
     outlineHistory, 
     setOutlineHistory,
-    storyOptions
+    storyOptions,
+    activeOutlineTitle,
+    setActiveOutlineTitle
 }) => {
     const [isLoading, setIsLoading] = useState<'titles' | 'outline' | 'refine' | null>(null);
-    const [activeTitle, setActiveTitle] = useState<string | null>(null);
     const [userInput, setUserInput] = useState('');
     const [error, setError] = useState<string | null>(null);
 
@@ -191,7 +194,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     const handleGenerateTitles = async () => {
         setIsLoading('titles');
         setError(null);
-        setActiveTitle(null);
+        setActiveOutlineTitle(null);
         try {
             const titles = await generateChapterTitles(storyOutline, chapters, storyOptions);
             // Append new titles instead of replacing
@@ -207,19 +210,19 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     const runIterativeOutlineGeneration = async (
         generatorFunction: () => Promise<{ text: string }>
     ) => {
-        if (!activeTitle) return;
+        if (!activeOutlineTitle) return;
         setError(null);
         
         try {
             const response = await generatorFunction();
-            setOutlineHistory(prev => ({...prev, [activeTitle]: response.text}));
+            setOutlineHistory(prev => ({...prev, [activeOutlineTitle]: response.text}));
         } catch (e: any) {
             console.error("Detailed outline generation failed:", e);
             setError(e.message || "生成细纲时发生未知错误。");
             // Clear history for this title on failure so user can retry
             setOutlineHistory(prev => {
                 const newHistory = {...prev};
-                delete newHistory[activeTitle as string];
+                delete newHistory[activeOutlineTitle as string];
                 return newHistory;
             });
         } finally {
@@ -228,24 +231,24 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     };
 
     const handleGenerateOutline = async () => {
-        if (!activeTitle) return;
+        if (!activeOutlineTitle) return;
         setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutline(storyOutline, chapters, activeTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutline(storyOutline, chapters, activeOutlineTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
     const handleRegenerateOutline = async () => {
-        if (!activeTitle) return;
+        if (!activeOutlineTitle) return;
         setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutline(storyOutline, chapters, activeTitle, '', storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutline(storyOutline, chapters, activeOutlineTitle, '', storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
     const handleRefineOutline = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!activeTitle || !refinementRequest.trim() || !outlineHistory[activeTitle]) return;
+        if (!activeOutlineTitle || !refinementRequest.trim() || !outlineHistory[activeOutlineTitle]) return;
         
         setIsLoading('refine');
         
@@ -265,15 +268,15 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setRefinementRequest('');
         
         await runIterativeOutlineGeneration(() => 
-            refineDetailedOutline(originalOutlineForRefinement, refinementInput, activeTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
+            refineDetailedOutline(originalOutlineForRefinement, refinementInput, activeOutlineTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
 
     const parsedOutline = useMemo<FinalDetailedOutline | null>(() => {
-        if (!activeTitle || !outlineHistory[activeTitle]) return null;
+        if (!activeOutlineTitle || !outlineHistory[activeOutlineTitle]) return null;
         
-        const text = outlineHistory[activeTitle];
+        const text = outlineHistory[activeOutlineTitle];
         // This tag is different from the main story outline tag
         const startTag = '\\[START_DETAILED_OUTLINE_JSON\\]';
         const endTag = '\\[END_DETAILED_OUTLINE_JSON\\]';
@@ -293,7 +296,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
             console.warn("Parsing incomplete detailed outline JSON. This might happen on error.", e);
             return null;
         }
-    }, [activeTitle, outlineHistory]);
+    }, [activeOutlineTitle, outlineHistory]);
     
     const handleCopy = () => {
         if (!parsedOutline) return;
@@ -334,8 +337,8 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                         {generatedTitles.map((title, index) => (
                             <button 
                                 key={index} 
-                                onClick={() => setActiveTitle(title)}
-                                className={`p-3 text-left rounded-md text-sm transition-colors duration-200 ${activeTitle === title ? 'bg-teal-600 text-white font-semibold' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
+                                onClick={() => setActiveOutlineTitle(title)}
+                                className={`p-3 text-left rounded-md text-sm transition-colors duration-200 ${activeOutlineTitle === title ? 'bg-teal-600 text-white font-semibold' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
                             >
                                 <span className="font-mono text-xs opacity-70 mr-2">{chapters.length + index + 1}.</span> {title}
                             </button>
@@ -344,11 +347,11 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                 </div>
             )}
 
-            {activeTitle && (
+            {activeOutlineTitle && (
                 <div className="border-t border-white/10 pt-4 space-y-4">
                     <div className="flex justify-between items-center">
                         <h3 className="text-lg font-semibold text-slate-200">
-                            {outlineHistory[activeTitle] !== undefined ? '细纲分析 / 优化' : '为'}<span className="text-teal-400 mx-1">“{activeTitle}”</span>生成细纲分析
+                            {outlineHistory[activeOutlineTitle] !== undefined ? '细纲分析 / 优化' : '为'}<span className="text-teal-400 mx-1">“{activeOutlineTitle}”</span>生成细纲分析
                         </h3>
                         {parsedOutline && (
                             <div className="flex items-center gap-x-2">
@@ -374,7 +377,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                     </div>
                     
                     {/* Generation UI */}
-                    {outlineHistory[activeTitle] === undefined && (
+                    {outlineHistory[activeOutlineTitle] === undefined && (
                         <div className='p-4 rounded-lg bg-slate-900/50 space-y-4'>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
@@ -442,7 +445,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                     {error && <p className="text-sm text-red-400 bg-red-900/30 p-2 rounded-md">{error}</p>}
                     
                     {/* Display & Refinement UI */}
-                    {outlineHistory[activeTitle] !== undefined && (
+                    {outlineHistory[activeOutlineTitle] !== undefined && (
                         <div className="space-y-4">
                              <div className="p-4 bg-slate-950/50 rounded-lg border border-slate-700 max-h-[60rem] overflow-y-auto space-y-6">
                                 {isLoading ? (

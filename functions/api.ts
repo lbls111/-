@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
 import {
   getSearchPrompts,
   getStoryOutlinePrompts,
@@ -11,118 +10,66 @@ import {
   getNewCharacterProfilePrompts,
 } from './prompts';
 
-import type { StoryOptions } from '../types';
+import type { StoryOptions, Citation } from '../types';
 
 interface PagesFunctionContext {
   request: Request;
-  env: {
-    API_KEY?: string;
-  };
 }
 
 // A more robust helper to extract a JSON object or array from a string.
 const extractJsonFromText = (text: string): string => {
-    // 1. Try to find JSON within markdown code blocks first.
     const markdownMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (markdownMatch && markdownMatch[1]) {
-        try {
-            JSON.parse(markdownMatch[1]);
-            return markdownMatch[1].trim();
-        } catch (e) {
-            // Malformed JSON in code block, fall through to next method.
-        }
+        try { JSON.parse(markdownMatch[1]); return markdownMatch[1].trim(); } catch (e) { /* Fall through */ }
     }
-
-    // 2. Find the first '{' or '[' to signal the start of a JSON structure.
     let startIndex = -1;
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
-
-    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
-        startIndex = firstBrace;
-    } else if (firstBracket !== -1) {
-        startIndex = firstBracket;
-    }
-
-    if (startIndex === -1) {
-        // No JSON object or array signature found. Return original text for debugging.
-        return text;
-    }
-
-    // 3. Scan from the start to find the matching closing character.
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) { startIndex = firstBrace; } 
+    else if (firstBracket !== -1) { startIndex = firstBracket; }
+    if (startIndex === -1) { return text; }
     const startChar = text[startIndex];
     const endChar = startChar === '{' ? '}' : ']';
     let openCount = 0;
-
     for (let i = startIndex; i < text.length; i++) {
-        if (text[i] === startChar) {
-            openCount++;
-        } else if (text[i] === endChar) {
-            openCount--;
-        }
-
+        if (text[i] === startChar) { openCount++; } 
+        else if (text[i] === endChar) { openCount--; }
         if (openCount === 0) {
-            // We found the end of the JSON structure.
             const potentialJson = text.substring(startIndex, i + 1);
-            try {
-                // Final validation.
-                JSON.parse(potentialJson);
-                return potentialJson;
-            } catch (e) {
-                // The balanced substring is not valid JSON. This can happen with corrupted data.
-                // We break and fall through to the last-resort return.
-                break; 
-            }
+            try { JSON.parse(potentialJson); return potentialJson; } catch (e) { break; }
         }
     }
-
-    // 4. If all else fails (e.g., malformed/unbalanced JSON), return the original text.
-    // This allows the frontend to see the raw model output for error diagnosis.
     return text;
 };
 
+// --- Custom OpenAI-Compatible API Helpers ---
 
-// Helper to forward the request and handle the SSE stream from a custom API
 async function streamOpenAIResponse(
-    apiUrl: string,
-    apiKey: string,
-    model: string,
-    messages: { role: string; content: string }[],
-    options: StoryOptions,
-    writable: WritableStream
+    apiUrl: string, apiKey: string, model: string, messages: { role: string; content: string }[], options: StoryOptions, writable: WritableStream
 ) {
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
-    
     try {
         const response = await fetch(new URL('/v1/chat/completions', apiUrl).toString(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
             body: JSON.stringify({
-                model,
-                messages,
-                stream: true,
-                temperature: options.temperature,
+                model, messages, stream: true, temperature: options.temperature,
                 top_p: (options.diversity - 0.1) / 2.0,
                 ...(options.topK > 0 && {top_k: options.topK}),
             }),
         });
-
         if (!response.ok) throw new Error(`Upstream API Error: ${response.status} - ${await response.text()}`);
         if (!response.body) throw new Error("Upstream API response has no body.");
-
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
-
             for (const line of lines) {
                 if (line.startsWith('data: ')) {
                     const data = line.substring(6);
@@ -144,7 +91,6 @@ async function streamOpenAIResponse(
     }
 }
 
-// Helper for non-streaming requests to a custom API
 async function postOpenAIRequest(
     apiUrl: string, apiKey: string, model: string, messages: { role: string; content: string }[], options: StoryOptions
 ): Promise<string> {
@@ -152,79 +98,29 @@ async function postOpenAIRequest(
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({
-            model,
-            messages,
-            stream: false,
-            temperature: options.temperature,
+            model, messages, stream: false, temperature: options.temperature,
             top_p: (options.diversity - 0.1) / 2.0,
             ...(options.topK > 0 && {top_k: options.topK}),
         }),
     });
-
     if (!response.ok) throw new Error(`Upstream API Error: ${response.status} - ${await response.text()}`);
-    
     const data = await response.json();
     const content = data.choices[0]?.message?.content;
     if (!content) throw new Error("Upstream API returned an empty response.");
     return content;
 }
 
-// Helper for streaming responses from the Gemini API
-async function streamGeminiResponse(
-    ai: GoogleGenAI, model: string, prompt: string, options: StoryOptions, writable: WritableStream
-) {
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-    try {
-        const stream = await ai.models.generateContentStream({ 
-            model, 
-            contents: prompt,
-            config: {
-                temperature: options.temperature,
-                topP: (options.diversity - 0.1) / 2.0,
-                topK: options.topK,
-            }
-        });
-        for await (const chunk of stream) {
-            const text = chunk.text;
-            if (text) {
-                 await writer.write(encoder.encode(JSON.stringify({ text }) + '\n'));
-            }
-        }
-    } catch (e: any) {
-        await writer.write(encoder.encode(JSON.stringify({ error: e.message }) + '\n'));
-    } finally {
-        await writer.close();
-    }
-}
-
-// Helper for non-streaming requests to the Gemini API
-async function postGeminiRequest(ai: GoogleGenAI, model: string, prompt: string, options: StoryOptions): Promise<string> {
-    const response = await ai.models.generateContent({ 
-        model, 
-        contents: prompt,
-        config: {
-            temperature: options.temperature,
-            topP: (options.diversity - 0.1) / 2.0,
-            topK: options.topK,
-        }
-    });
-    return response.text;
-}
+// --- Main Handler ---
 
 export const onRequestPost: (context: PagesFunctionContext) => Promise<Response> = async (context) => {
-    const { request, env } = context;
-    
+    let action: string | undefined;
     try {
-        const { action, payload } = await request.json();
+        const { request } = context;
+        const { action: reqAction, payload } = await request.json();
+        action = reqAction;
         const { options, ...restPayload } = payload;
-
-        const isCustomApi = options && options.apiBaseUrl && options.apiKey;
-
+        
         if (action === 'listModels') {
-            if (!isCustomApi) {
-                return new Response(JSON.stringify(['gemini-2.5-pro', 'gemini-2.5-flash']), { headers: { 'Content-Type': 'application/json' } });
-            }
             const modelResponse = await fetch(new URL('/v1/models', options.apiBaseUrl).toString(), { headers: { 'Authorization': `Bearer ${options.apiKey}` }});
             if (!modelResponse.ok) throw new Error(`Failed to fetch models: ${modelResponse.status} - ${await modelResponse.text()}`);
             const modelData = await modelResponse.json();
@@ -232,166 +128,72 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             return new Response(JSON.stringify(modelIds), { headers: { 'Content-Type': 'application/json' }});
         }
         
-        const ai = isCustomApi ? null : new GoogleGenAI({ apiKey: env.API_KEY || '' });
-        if (!isCustomApi && !env.API_KEY) {
-            throw new Error("AI Studio Mode Error: The API_KEY environment variable is not set.");
-        }
-
-        let prompt: string | { role: string; content: string }[] = '';
+        let prompt: { role: string; content: string }[] = [];
         let model: string = '';
         let isStreaming = false;
         
         switch (action) {
-            case 'generateStoryOutline':
-            case 'generateDetailedOutline':
-            case 'refineDetailedOutline':
-            case 'generateChapterTitles':
-            case 'editChapterText':
+            case 'performSearch': case 'generateStoryOutline': case 'generateDetailedOutline': 
+            case 'refineDetailedOutline': case 'generateChapterTitles': case 'editChapterText': 
             case 'generateNewCharacterProfile':
-            case 'performSearch':
-                isStreaming = false;
-                break;
-            case 'generateChapter':
-            case 'generateCharacterInteraction':
-                isStreaming = true;
-                break;
-            default:
-                throw new Error(`Unknown action: ${action}`);
+                isStreaming = false; break;
+            case 'generateChapter': case 'generateCharacterInteraction':
+                isStreaming = true; break;
+            default: throw new Error(`Unknown action: ${action}`);
         }
 
-        // --- Get Model and Prompt ---
         switch (action) {
-            case 'performSearch':
-                model = options.searchModel || 'gemini-2.5-flash';
-                prompt = getSearchPrompts(restPayload.storyCore, options, isCustomApi);
-                break;
-            case 'generateStoryOutline':
-                model = options.planningModel || 'gemini-2.5-flash';
-                prompt = getStoryOutlinePrompts(restPayload.storyCore, options, isCustomApi);
-                break;
-            case 'generateChapter':
-                model = options.writingModel || 'gemini-2.5-pro';
-                prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline, isCustomApi);
-                break;
-            case 'generateChapterTitles':
-                model = options.planningModel || 'gemini-2.5-flash';
-                prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options, isCustomApi);
-                break;
-            case 'generateDetailedOutline':
-                model = options.planningModel || 'gemini-2.5-flash';
-                prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, restPayload.userInput, options, restPayload.iterationConfig, isCustomApi);
-                break;
-            case 'refineDetailedOutline':
-                 model = options.planningModel || 'gemini-2.5-flash';
-                 prompt = getRefineDetailedOutlinePrompts(restPayload.originalOutlineJson, restPayload.refinementRequest, restPayload.chapterTitle, restPayload.storyOutline, options, restPayload.iterationConfig, isCustomApi);
-                 break;
-            case 'editChapterText':
-                model = options.writingModel || 'gemini-2.5-pro';
-                prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options, isCustomApi);
-                break;
-            case 'generateCharacterInteraction':
-                model = options.planningModel || 'gemini-2.5-flash';
-                prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options, isCustomApi);
-                break;
-            case 'generateNewCharacterProfile':
-                model = options.planningModel || 'gemini-2.5-flash';
-                prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options, isCustomApi);
-                break;
+            case 'performSearch': model = options.searchModel; prompt = getSearchPrompts(restPayload.storyCore, options); break;
+            case 'generateStoryOutline': model = options.planningModel; prompt = getStoryOutlinePrompts(restPayload.storyCore, options); break;
+            case 'generateChapter': model = options.writingModel; prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline); break;
+            case 'generateChapterTitles': model = options.planningModel; prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options); break;
+            case 'generateDetailedOutline': model = options.planningModel; prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, restPayload.userInput, options, restPayload.iterationConfig); break;
+            case 'refineDetailedOutline': model = options.planningModel; prompt = getRefineDetailedOutlinePrompts(restPayload.originalOutlineJson, restPayload.refinementRequest, restPayload.chapterTitle, restPayload.storyOutline, options, restPayload.iterationConfig); break;
+            case 'editChapterText': model = options.writingModel; prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options); break;
+            case 'generateCharacterInteraction': model = options.planningModel; prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options); break;
+            case 'generateNewCharacterProfile': model = options.planningModel; prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options); break;
         }
 
-        if (!model) {
-            throw new Error(`No model selected for action: ${action}. Please check your settings.`);
-        }
+        if (!model) throw new Error(`No model selected for action: ${action}. Please check your settings.`);
 
-        // --- Execute and Respond ---
         if (isStreaming) {
             const { readable, writable } = new TransformStream();
-            if (isCustomApi) {
-                streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt as { role: string; content: string }[], options, writable);
-            } else {
-                streamGeminiResponse(ai!, model, prompt as string, options, writable);
-            }
+            streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt, options, writable);
             return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
         } else {
-            let resultText: string;
-            if (isCustomApi) {
-                resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt as { role: string; content: string }[], options);
-            } else {
-                resultText = await postGeminiRequest(ai!, model, prompt as string, options);
-            }
-
+            const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt, options);
             let responseBody;
+            const jsonText = extractJsonFromText(resultText);
             switch (action) {
-                case 'generateStoryOutline': {
-                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
-                    responseBody = { text: `[START_OUTLINE_JSON]\n${jsonText}\n[END_OUTLINE_JSON]` };
-                    break;
-                }
-                case 'generateDetailedOutline':
-                case 'refineDetailedOutline': {
-                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
-                    responseBody = { text: `[START_DETAILED_OUTLINE_JSON]\n${jsonText}\n[END_DETAILED_OUTLINE_JSON]` };
-                    break;
-                }
-                case 'generateChapterTitles': {
-                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
-                    responseBody = { titles: JSON.parse(jsonText) };
-                    break;
-                }
-                case 'generateNewCharacterProfile': {
-                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
-                    responseBody = { text: jsonText };
-                    break;
-                }
-                case 'performSearch':
-                case 'editChapterText':
-                    responseBody = { text: resultText };
-                    break;
-                default:
-                    responseBody = { text: resultText }; // Fallback
+                case 'performSearch': responseBody = { text: resultText, citations: [] }; break; // No citations in custom mode
+                case 'generateStoryOutline': responseBody = { text: `[START_OUTLINE_JSON]\n${jsonText}\n[END_OUTLINE_JSON]` }; break;
+                case 'generateDetailedOutline': case 'refineDetailedOutline': responseBody = { text: `[START_DETAILED_OUTLINE_JSON]\n${jsonText}\n[END_DETAILED_OUTLINE_JSON]` }; break;
+                case 'generateChapterTitles': responseBody = { titles: JSON.parse(jsonText) }; break;
+                case 'generateNewCharacterProfile': responseBody = { text: jsonText }; break;
+                case 'editChapterText': responseBody = { text: resultText }; break;
+                default: responseBody = { text: resultText };
             }
-            
             return new Response(JSON.stringify(responseBody), { headers: { 'Content-Type': 'application/json' }});
         }
 
     } catch (e: any) {
         let status = 500;
         let message = e.message || "An unknown error occurred";
-
         const upstreamMatch = message.match(/Upstream API Error: (\d+)/);
         if (upstreamMatch && upstreamMatch[1]) {
             const upstreamStatus = parseInt(upstreamMatch[1], 10);
             const rawUpstreamBody = message.substring(message.indexOf('-') + 1).trim();
-            
             if (upstreamStatus === 504 || upstreamStatus === 524) {
-                message = "AI模型响应超时 (Gateway Timeout)。这通常在处理复杂请求（如生成多轮优化的细纲）时发生。建议：\n1. 在“细纲”设置中减少“最大优化次数”。\n2. 在系统设置中更换一个更快的模型（如Flash模型）用于规划。";
-                status = 504; // Pass through the timeout status
-            } else if (upstreamStatus === 401) {
-                message = "API密钥无效或未授权。请在设置中检查您的API密钥。";
-                status = 401;
-            } else if (upstreamStatus === 429) {
-                 message = "已达到API速率限制 (Rate Limit Exceeded)。请稍后重试或检查您的API账户用量。";
-                 status = 429;
+                message = "AI模型响应超时 (Gateway Timeout)。这通常在处理复杂请求（如生成多轮优化的细纲）时发生。建议：\n1. 在“细纲”设置中减少“最大优化次数”。\n2. 在系统设置中更换一个更快的模型（如Flash模型）用于规划。"; status = 504;
+            } else if (upstreamStatus === 401) { message = "API密钥无效或未授权。请在设置中检查您的API密钥。"; status = 401;
+            } else if (upstreamStatus === 429) { message = "已达到API速率限制 (Rate Limit Exceeded)。请稍后重试或检查您的API账户用量。"; status = 429;
             } else if (upstreamStatus === 400) {
                 let upstreamError = "上游API报告了一个请求错误。";
-                try {
-                   const errJson = JSON.parse(rawUpstreamBody);
-                   upstreamError = errJson.error?.message || rawUpstreamBody;
-                } catch {}
-                 message = `请求错误 (Bad Request): ${upstreamError}`;
-                 status = 400;
-            } else {
-                // Generic upstream server error
-                message = `上游API服务器错误 (状态码: ${upstreamStatus})。请稍后重试。`;
-                status = upstreamStatus >= 500 ? 502 : 500;
-            }
-        } else if (message.includes("AI Studio Mode Error")) {
-            status = 400; // Bad Request
+                try { const errJson = JSON.parse(rawUpstreamBody); upstreamError = errJson.error?.message || rawUpstreamBody; } catch {}
+                 message = `请求错误 (Bad Request): ${upstreamError}`; status = 400;
+            } else { message = `上游API服务器错误 (状态码: ${upstreamStatus})。请稍后重试。`; status = upstreamStatus >= 500 ? 502 : 500; }
         }
-        
-        return new Response(JSON.stringify({ error: message }), {
-            status,
-            headers: { 'Content-Type': 'application/json' },
-        });
+        console.error(`[${new Date().toISOString()}] Action: ${action || 'unknown'} | Status: ${status} | Error: ${message}`);
+        return new Response(JSON.stringify({ error: message }), { status, headers: { 'Content-Type': 'application/json' } });
     }
 };
