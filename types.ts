@@ -10,14 +10,6 @@ export enum GameState {
   ERROR,
 }
 
-export interface OutlineGenerationProgress {
-  status: 'critiquing' | 'refining' | 'complete' | 'error';
-  version: number;
-  maxVersions: number;
-  score: number;
-  message: string;
-}
-
 export type ActiveTab = 'agent' | 'worldbook' | 'characters' | 'outline' | 'writing';
 
 export type StoryLength = '超短篇(5-10章)' | '短篇(15-30章)' | '中篇(30-100章)' | '长篇(100章以上)';

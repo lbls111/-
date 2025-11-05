@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
-import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry, OutlineGenerationProgress } from './types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry } from './types';
 import { performSearch, generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
 
 import SparklesIcon from './components/icons/SparklesIcon';
@@ -23,7 +23,6 @@ import WorldbookEditor from './components/WorldbookEditor';
 import UploadIcon from './components/icons/UploadIcon';
 import ClipboardListIcon from './components/icons/ClipboardListIcon';
 import LogViewer from './components/LogViewer';
-import GenerationProgressModal from './components/GenerationProgressModal';
 
 
 const storyStyles = {
@@ -221,10 +220,6 @@ const App: React.FC = () => {
     // New state for logging
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
-
-    // New global state for outline generation progress
-    const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
-    const [outlineGenerationProgress, setOutlineGenerationProgress] = useState<OutlineGenerationProgress | null>(null);
 
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
@@ -1028,10 +1023,6 @@ const App: React.FC = () => {
                                 storyOptions={storyOptions}
                                 activeOutlineTitle={activeOutlineTitle}
                                 setActiveOutlineTitle={setActiveOutlineTitle}
-                                onGenerationStart={(progress) => { setIsGeneratingOutline(true); setOutlineGenerationProgress(progress); }}
-                                onGenerationProgress={setOutlineGenerationProgress}
-                                onGenerationEnd={() => { setIsGeneratingOutline(false); setOutlineGenerationProgress(null); }}
-                                isGenerating={isGeneratingOutline}
                              />
                         )}
                         {activeTab === 'writing' && (
@@ -1173,10 +1164,6 @@ const App: React.FC = () => {
                 onClose={() => setIsLogViewerOpen(false)}
                 logs={logs}
                 onClear={handleClearLogs}
-            />
-            <GenerationProgressModal 
-                isOpen={isGeneratingOutline}
-                progress={outlineGenerationProgress}
             />
             {gameState === GameState.INITIAL || (gameState === GameState.ERROR && !storyOutline) ? renderInitialView() : renderAgentWorkspace()}
         </div>

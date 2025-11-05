@@ -208,51 +208,32 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
     return createPrompt(system, user);
 }
 
-export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }): { role: string; content: string; }[] => {
-    const system = `你是一个由多个专家组成的AI写作顾问团队，包括首席编剧、网文分析师和第三方评论员。
-你的任务是为一个指定的章节标题，通过一个【创作-评估-优化】的迭代循环，生成一份极其详尽、深刻、专业的章节细纲。
-最终输出必须是一个包含完整迭代历史的单一JSON对象。不要在JSON对象之外添加任何解释或额外的文本。
+export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions): { role: string; content: string; }[] => {
+    const system = `你是一个由首席编剧和第三方评论员组成的AI写作顾问。
+你的任务是为指定的章节，执行一次【创作+评估】流程。
+1.  **[编剧创作]**: 基于故事大纲、已有章节和用户输入，创作**第一版（v1）**的章节细纲。
+2.  **[评论员评估]**: 立即对你刚刚创作的v1稿件进行严格的、独立的第三方评估。
+3.  **[整合输出]**: 将v1稿件和对其的评估报告，打包成一个单一的、完整的JSON对象。
 
-**核心工作流程：**
-1.  **[编剧创作]**: 基于故事大纲、已有章节和用户输入，创作第一版章节细纲。细纲需要分解为多个关键“剧情点”。
-2.  **[评论员评估]**: 召唤一个独立的、挑剔的第三方评论员人格（以顶尖网络小说为标准），对草稿进行严格评分。评分维度包括：爽点密度、情绪曲线、角色动机、逻辑性、冲突张力等。
-3.  **[分析师优化]**: 如果评分低于目标（${iterationConfig.scoreThreshold}/10.0），分析师将根据评论员的建议，提出具体的、可操作的优化方案。
-4.  **[迭代]**: 编剧根据优化方案，创作一个全新的、更好的版本。重复步骤2和3，直到评分达标或达到最大迭代次数（${iterationConfig.maxIterations}次）。
-5.  **[整合输出]**: 将最终版本的细纲，以及每一次迭代的评估报告和草稿摘要，整合到一个最终的JSON对象中。
+最终输出必须是这个单一的JSON对象，不要在JSON之外添加任何文本。
 
 **输出JSON结构:**
 \`\`\`json
 {
-  "finalVersion": <number>,
+  "finalVersion": 1,
   "optimizationHistory": [
     {
-      "version": <number>,
+      "version": 1,
       "critique": {
         "overallScore": <number>,
         "scoringBreakdown": [ { "dimension": "<string>", "score": <number>, "reason": "<string>" } ],
         "improvementSuggestions": [ { "area": "<string>", "suggestion": "<string>" } ]
       },
-      "outline": <DetailedOutlineAnalysis Object for this version>
+      "outline": <DetailedOutlineAnalysis Object for version 1>
     }
   ],
-  "plotPoints": [
-    {
-      "summary": "对这个剧情点的简洁概括。",
-      "emotionalCurve": "描述这个剧情点在读者情绪曲线中的作用（例如：建立期待、紧张升级、情感爆发、短暂缓和）。",
-      "maslowsNeeds": "分析这个剧情点满足了角色哪个层次的需求（生理、安全、归属、尊重、自我实现），以此强化动机。",
-      "webNovelElements": "明确指出这个剧情点包含了哪些核心网文要素（例如：扮猪吃虎、打脸、获得金手指、越级挑战、生死危机、揭露秘密）。",
-      "conflictSource": "明确冲突的来源（人与人、人与环境、人与内心）。",
-      "showDontTell": "提供具体的“展示而非讲述”的建议。即如何将抽象情感转化为具体行动或场景。",
-      "dialogueAndSubtext": "设计关键对话，并指出其“潜台词”（角色真实想表达但没说出口的意思）。",
-      "logicSolidification": "指出需要在这里埋下的伏笔，或需要回收的前文伏笔，以夯实逻辑。",
-      "emotionAndInteraction": "设计角色之间的关键互动，以最大化情感张力。",
-      "pacingControl": "关于这一段的叙事节奏建议（快速推进或慢速渲染）。"
-    }
-  ],
-  "nextChapterPreview": {
-    "nextOutlineIdea": "为下一章的剧情走向提供一个或多个充满悬念的初步构想。",
-    "characterNeeds": "指出在本章结束后，主要角色的新需求或动机是什么，以驱动他们进入下一章。"
-  }
+  "plotPoints": <DetailedOutlineAnalysis.plotPoints for version 1>,
+  "nextChapterPreview": <DetailedOutlineAnalysis.nextChapterPreview for version 1>
 }
 \`\`\`
 `;
@@ -265,31 +246,35 @@ export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: Gener
 *   **用户额外指令**: ${userInput || "无"}
 
 ### 任务
-请启动【创作-评估-优化】流程，为章节“${chapterTitle}”生成最终的细纲分析JSON。`;
+请为章节“${chapterTitle}”执行一次【创作+评估】流程，并输出包含v1稿件和评估报告的完整JSON。`;
 
     return createPrompt(system, user);
 }
 
-export const getRefineDetailedOutlinePrompts = (originalOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }): { role: string; content: string; }[] => {
-    const system = `你是一个AI写作顾问团队，专门负责根据用户的反馈来优化已有的章节细纲。
-你的工作流程和能力与初次生成时完全相同：【创作-评估-优化】的迭代循环。
-关键区别在于，你的第一版草稿不是从零开始，而是基于用户提供的“原始细纲”和“优化指令”进行修改。
-最终输出仍然是包含完整历史的单一JSON对象。不要添加任何额外的文本。`;
+export const getRefineDetailedOutlinePrompts = (previousOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions): { role: string; content: string; }[] => {
+    const system = `你是一个AI写作顾问，专门负责根据用户的反馈和上一轮的评估报告，对已有的章节细纲进行**一次**优化迭代。
 
-    const user = `### 任务：优化细纲
+**核心任务:**
+1.  **分析输入**: 仔细研究我提供的“上一轮细纲JSON”和“用户优化指令”。
+2.  **创作新版**: 根据上一轮的“优化建议”和用户的“新指令”，创作一个全新的、更优秀的细纲版本。
+3.  **评估新版**: 像之前一样，对自己创作的新版本进行严格的第三方评估。
+4.  **更新历史**: 将新版本的稿件和评估报告，追加到 \`optimizationHistory\` 数组中，并将 \`finalVersion\` 加一。
+5.  **输出完整JSON**: 输出包含所有历史记录的、完整的、更新后的JSON对象。不要在JSON之外添加任何文本。`;
+
+    const user = `### 任务：优化细纲 (执行一次迭代)
 *   **章节标题**: **${chapterTitle}**
 *   **总大纲**: ${storyOutline.plotSynopsis}
 
-### 原始细纲
+### 上一轮细纲JSON (包含历史记录)
 这是需要被优化的版本：
 \`\`\`json
-${originalOutlineJson}
+${previousOutlineJson}
 \`\`\`
 
-### **核心优化指令**
-**${refinementRequest}**
+### **用户优化指令 (本次迭代的核心)**
+**${refinementRequest || "无特定指令，请根据上一轮的评估报告进行自主优化。"}**
 
-请根据我的核心优化指令，对原始细纲进行修改，并启动新一轮的【创作-评估-优化】流程，生成最终的优化版细纲JSON。`;
+请根据我的指令和上一轮的评估报告，对细纲进行修改，并输出包含所有历史记录的、更新后的完整JSON。`;
 
     return createPrompt(system, user);
 }

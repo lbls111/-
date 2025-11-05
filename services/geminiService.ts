@@ -114,33 +114,31 @@ export const generateChapterTitles = async (
     return titles;
 };
 
-// STREAMING: The iterative process is now streamed to the frontend for progress display and reliability.
-export const generateDetailedOutlineStream = (
+// NON-STREAMING: Generates the first version of the detailed outline.
+export const generateDetailedOutline = (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     chapterTitle: string,
     userInput: string,
-    options: StoryOptions,
-    iterationConfig: { maxIterations: number; scoreThreshold: number; }
-) => {
-     return streamFetch('/api', {
+    options: StoryOptions
+): Promise<{ text: string }> => {
+     return postFetch<{ text: string }>('/api', {
         action: 'generateDetailedOutline',
-        payload: { outline, chapters, chapterTitle, userInput, options, iterationConfig }
+        payload: { outline, chapters, chapterTitle, userInput, options }
      });
 }
 
-// STREAMING: Refinement also becomes a streaming action for consistency.
-export const refineDetailedOutlineStream = (
-    originalOutlineJson: string,
+// NON-STREAMING: Refines an existing outline for one iteration.
+export const refineDetailedOutline = (
+    previousOutlineJson: string,
     refinementRequest: string,
     chapterTitle: string,
     storyOutline: StoryOutline,
-    options: StoryOptions,
-    iterationConfig: { maxIterations: number; scoreThreshold: number; }
-) => {
-     return streamFetch('/api', {
+    options: StoryOptions
+): Promise<{ text: string }> => {
+     return postFetch<{ text: string }>('/api', {
         action: 'refineDetailedOutline',
-        payload: { originalOutlineJson, refinementRequest, chapterTitle, storyOutline, options, iterationConfig }
+        payload: { previousOutlineJson, refinementRequest, chapterTitle, storyOutline, options }
      });
 }
 
