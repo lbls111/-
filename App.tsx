@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
 import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline } from './types';
-import { generateStoryOutlineStream, generateChapterStream, editChapterText, generateChapterTitlesStream } from './services/geminiService';
+import { generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
 
 import SparklesIcon from './components/icons/SparklesIcon';
 import LoadingSpinner from './components/icons/LoadingSpinner';
@@ -66,12 +66,12 @@ const DEFAULT_ANTI_PATTERN_GUIDE: AntiPatternGuide = {
     noMetaphors: { description: '', instruction: '' },
     noCliches: { description: '', instruction: '' },
 };
-const DEFAULT_STORY_OPTIONS: StoryOptions = {
+export const DEFAULT_STORY_OPTIONS: StoryOptions = {
     apiBaseUrl: '',
     apiKey: '',
     availableModels: [],
-    planningModel: '',
-    writingModel: '',
+    planningModel: 'gemini-2.5-flash',
+    writingModel: 'gemini-2.5-pro',
     style: '爽文 (重生复仇打脸)',
     length: '短篇(15-30章)',
     authorStyle: '默认风格',
@@ -159,9 +159,8 @@ const extractAndParseJson = <T,>(
     if (match && match[1]) {
        jsonString = match[1].trim();
     } else {
-        // If we can't find both start and end tags, we consider the data incomplete or malformed.
-        // This will be caught by the caller. For intermittent checks during streaming,
-        // this is expected and should not be treated as a fatal error.
+        // This is now a fatal error because we expect the full text from the backend.
+        console.error(`Missing markers in text for step "${stepNameForError}":`, text);
         throw new Error(`在"${stepNameForError}"的输出中未能找到完整的数据块 (缺少起始或结束信标)。`);
     }
     
@@ -171,8 +170,6 @@ const extractAndParseJson = <T,>(
     try {
         return JSON.parse(jsonString) as T;
     } catch (e: any) {
-        // This catch block now only triggers if the content BETWEEN valid start/end tags is malformed JSON.
-        // This is a less common and more severe error, so logging it is appropriate.
         console.error(`从步骤 "${stepNameForError}" 解析JSON失败:`, jsonString);
         throw new Error(`解析来自"${stepNameForError}"的JSON数据时失败: ${e.message}`);
     }
@@ -269,12 +266,7 @@ const App: React.FC = () => {
         setActiveTab('outline');
         
         try {
-            const stream = await generateChapterTitlesStream(finalOutline, [], storyOptions);
-            let fullText = '';
-            for await (const chunk of stream) {
-                fullText += chunk.text;
-            }
-            const titles = JSON.parse(fullText);
+            const titles = await generateChapterTitles(finalOutline, [], storyOptions);
             setGeneratedTitles(titles);
         } catch(e: any) {
             handleError("自动生成初始章节标题失败: " + e.message, undefined);
@@ -287,11 +279,13 @@ const App: React.FC = () => {
             setError("请输入故事核心。");
             return;
         }
-        if (!storyOptions.apiKey || !storyOptions.apiBaseUrl || !storyOptions.planningModel) {
-            setError("请先在设置中配置有效的API地址、密钥并选择规划模型。");
-            setIsSettingsOpen(true);
-            return;
+        
+        if (!storyOptions.planningModel) {
+             handleError("错误：缺少规划模型。请在设置中选择一个模型或恢复默认设置。");
+             setIsSettingsOpen(true);
+             return;
         }
+
         // If an override is used (from import or refinement), update the main state
         if (coreOverride && coreOverride !== storyCore) {
             setStoryCore(coreToUse);
@@ -300,7 +294,7 @@ const App: React.FC = () => {
         setError(null);
         setChapters([]);
         setStoryOutline(null);
-        setActiveTab('agent'); // This ensures the user sees the planning process
+        setActiveTab('agent');
         setGeneratedTitles([]);
         setOutlineHistory({});
         
@@ -317,32 +311,18 @@ const App: React.FC = () => {
             },
         ];
         setThoughtSteps(initialSteps);
-        setGameState(GameState.PLANNING); // This switches to the workspace view
+        setGameState(GameState.PLANNING);
         
         setTimeout(() => scrollToBottom(workspaceRef), 100);
 
         try {
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running', content: '' } : s));
-            const stream = await generateStoryOutlineStream(coreToUse, storyOptions);
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running' } : s));
             
-            let thoughtText = "";
-            const citationsMap = new Map<string, Citation>();
-            
-            for await (const chunk of stream) {
-                thoughtText += chunk.text;
-                const newCitations = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web).filter(Boolean) as Citation[] | undefined;
-                if(newCitations) {
-                    newCitations.forEach(c => {
-                        if (c.uri && !citationsMap.has(c.uri)) {
-                            citationsMap.set(c.uri, c);
-                        }
-                    });
-                }
-                const citations = Array.from(citationsMap.values());
-                setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, content: thoughtText, citations } : s));
-            }
-            
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete' } : s));
+            // NON-STREAMING: Await the full response for reliability
+            const response = await generateStoryOutline(coreToUse, storyOptions);
+            const thoughtText = response.text;
+
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: thoughtText } : s));
             
             try {
                 const finalOutline = extractAndParseJson<StoryOutline>(
@@ -380,8 +360,9 @@ const App: React.FC = () => {
             handleError("无法写入章节，缺少创作计划。请返回重试。");
             return;
         }
+        
         if (!storyOptions.writingModel) {
-            handleError("请先在设置中选择一个写作模型。");
+            handleError("错误：缺少写作模型。请在设置中选择一个模型或恢复默认设置。");
             setIsSettingsOpen(true);
             return;
         }
@@ -584,15 +565,7 @@ const App: React.FC = () => {
     const handleNewProject = () => {
         if (window.confirm("确定要开始一个新项目吗？所有未导出的内容都将丢失。")) {
             localStorage.removeItem('saved_story_session');
-            setGameState(GameState.INITIAL); 
-            setError(null);
-            setStoryOutline(null);
-            setChapters([]);
-            setGeneratedTitles([]);
-            setOutlineHistory({});
-            setThoughtSteps([]);
-            setStoryCore('');
-            setStoryOptions(DEFAULT_STORY_OPTIONS);
+            window.location.reload();
         }
     };
 
@@ -818,12 +791,11 @@ const App: React.FC = () => {
                 );
                 return true;
             } catch {
-                // Any parsing failure (including missing tags during stream) means it's not ready.
                 return false;
             }
         })();
         
-        const isWriteButtonDisabled = gameState === GameState.WRITING || !isNextChapterOutlined || !storyOptions.writingModel;
+        const isWriteButtonDisabled = gameState === GameState.WRITING || !isNextChapterOutlined;
         let writeButtonTooltip = isWriteButtonDisabled ? `请先在“细纲”模块为第 ${nextChapterIndex + 1} 章生成细纲分析。` : '';
         if (gameState === GameState.WRITING) writeButtonTooltip = "正在创作中...";
         if (!storyOptions.writingModel) writeButtonTooltip = "请在设置中选择写作模型。";

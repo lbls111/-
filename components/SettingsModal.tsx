@@ -1,7 +1,8 @@
-import React, { FC, useState } from 'react';
+import React, { FC, useState, useEffect } from 'react';
 import type { StoryOptions, AuthorStyle } from '../types';
 import { listModels } from '../services/geminiService';
 import LoadingSpinner from './icons/LoadingSpinner';
+import { DEFAULT_STORY_OPTIONS } from '../App';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -34,6 +35,11 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
   const [modelError, setModelError] = useState<string | null>(null);
   const [connectionSuccess, setConnectionSuccess] = useState(false);
   
+  useEffect(() => {
+    // Sync local state if parent options change while modal is open
+    setLocalOptions(options);
+  }, [options, isOpen]);
+  
   if (!isOpen) return null;
 
   const handleLocalOptionChange = <K extends keyof StoryOptions>(key: K, value: StoryOptions[K]) => {
@@ -46,10 +52,14 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
   };
 
   const handleFetchModels = async () => {
-    if (!localOptions.apiBaseUrl || !localOptions.apiKey) {
-      setModelError("请输入有效的API地址和密钥。");
-      return;
+    const isTryingCustom = localOptions.apiBaseUrl || localOptions.apiKey;
+    const isCustomConfigValid = localOptions.apiBaseUrl && localOptions.apiKey;
+
+    if (isTryingCustom && !isCustomConfigValid) {
+        setModelError("请输入有效的API地址和密钥，或将两者都留空以使用默认设置。");
+        return;
     }
+
     setIsLoadingModels(true);
     setModelError(null);
     setConnectionSuccess(false);
@@ -68,20 +78,24 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
             !m.includes('image')
         );
 
-        handleLocalOptionChange('availableModels', chatModels);
+        setLocalOptions(prev => ({ ...prev, availableModels: chatModels }));
 
-        // Auto-select the first available model if none are selected
+        // Auto-select models if none are selected or if current selection is invalid
         if (chatModels.length > 0) {
-            if (!localOptions.planningModel) {
-                 handleLocalOptionChange('planningModel', chatModels[0]);
+            const currentPlanningModelValid = chatModels.includes(localOptions.planningModel);
+            const currentWritingModelValid = chatModels.includes(localOptions.writingModel);
+
+            if (!currentPlanningModelValid) {
+                 const flashModel = chatModels.find(m => m.includes('flash'));
+                 setLocalOptions(prev => ({...prev, planningModel: flashModel || chatModels[0]}));
             }
-            if (!localOptions.writingModel) {
-                // Try to find a high-quality model, otherwise default to the first
+            if (!currentWritingModelValid) {
                 const proModel = chatModels.find(m => m.includes('pro') || m.includes('opus') || m.includes('4'));
-                handleLocalOptionChange('writingModel', proModel || chatModels[0]);
+                setLocalOptions(prev => ({...prev, writingModel: proModel || chatModels[0]}));
             }
         }
         setConnectionSuccess(true);
+        setTimeout(() => setConnectionSuccess(false), 3000);
     } catch(e: any) {
         setModelError(`连接失败: ${e.message}`);
     } finally {
@@ -93,6 +107,21 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
     setOptions(localOptions);
     onClose();
   };
+
+  const handleResetToDefault = () => {
+      // Restore not just API keys, but also the model selections to default.
+      setLocalOptions(prev => ({
+          ...prev,
+          apiBaseUrl: DEFAULT_STORY_OPTIONS.apiBaseUrl,
+          apiKey: DEFAULT_STORY_OPTIONS.apiKey,
+          availableModels: DEFAULT_STORY_OPTIONS.availableModels,
+          planningModel: DEFAULT_STORY_OPTIONS.planningModel,
+          writingModel: DEFAULT_STORY_OPTIONS.writingModel,
+      }));
+      setModelError(null);
+      setConnectionSuccess(false);
+  };
+
 
   return (
     <div 
@@ -119,7 +148,15 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
 
         <div className="space-y-6">
           <div className="border-b border-white/10 pb-6">
-              <h3 className="text-lg font-bold text-teal-400 mb-4">API 连接 (OpenAI 兼容)</h3>
+              <div className="flex justify-between items-center mb-4">
+                 <h3 className="text-lg font-bold text-teal-400">API 连接设置</h3>
+                 <button onClick={handleResetToDefault} className="text-xs font-semibold text-slate-400 hover:text-slate-200 bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded-md transition-colors">
+                    恢复默认设置
+                 </button>
+              </div>
+              <p className="text-xs text-slate-500 mb-4">
+                将下方留空可使用AI Studio内置的Gemini API。您也可以连接到任何与OpenAI兼容的第三方API。
+              </p>
               <div className="space-y-4">
                   <div>
                       <label htmlFor="api-base-url" className="block text-sm font-medium text-slate-300 mb-2">
@@ -130,7 +167,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                           type="text"
                           value={localOptions.apiBaseUrl}
                           onChange={e => handleLocalOptionChange('apiBaseUrl', e.target.value)}
-                          placeholder="例如: https://api.openai.com"
+                          placeholder="留空以使用默认设置"
                           className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
                       />
                   </div>
@@ -143,7 +180,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                           type="password"
                           value={localOptions.apiKey}
                           onChange={e => handleLocalOptionChange('apiKey', e.target.value)}
-                          placeholder="sk-..."
+                          placeholder="留空以使用默认设置"
                           className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
                       />
                   </div>
@@ -172,10 +209,20 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                     value={localOptions.planningModel}
                     onChange={e => handleLocalOptionChange('planningModel', e.target.value)}
                     className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
-                    disabled={localOptions.availableModels.length === 0}
+                    disabled={localOptions.apiBaseUrl !== '' && localOptions.availableModels.length === 0}
                 >
-                  <option value="" disabled>请先获取模型</option>
-                  {localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)}
+                  {localOptions.apiBaseUrl === '' ? (
+                    <>
+                        <option value="gemini-2.5-flash">gemini-2.5-flash (默认)</option>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                    </>
+                  ) : (
+                    localOptions.availableModels.length > 0 ? (
+                       localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)
+                    ) : (
+                       <option value="">请先获取模型</option>
+                    )
+                  )}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
                     用于联网研究、世界书、角色和细纲创作。建议选择速度快的模型。
@@ -191,10 +238,20 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                     value={localOptions.writingModel}
                     onChange={e => handleLocalOptionChange('writingModel', e.target.value)}
                     className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
-                    disabled={localOptions.availableModels.length === 0}
+                    disabled={localOptions.apiBaseUrl !== '' && localOptions.availableModels.length === 0}
                  >
-                   <option value="" disabled>请先获取模型</option>
-                   {localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)}
+                   {localOptions.apiBaseUrl === '' ? (
+                    <>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro (默认)</option>
+                        <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                    </>
+                  ) : (
+                    localOptions.availableModels.length > 0 ? (
+                       localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)
+                    ) : (
+                       <option value="">请先获取模型</option>
+                    )
+                  )}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">用于生成章节正文。建议选择质量高的模型。</p>
             </div>

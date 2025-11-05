@@ -62,7 +62,6 @@ const createPrompt = (system: string, user: string, forCustomApi: boolean) => {
 export const getStoryOutlinePrompts = (storyCore: string, options: StoryOptions, forCustomApi: boolean) => {
     const system = `你是一个顶级的网络小说作家和策划人，精通市场分析和故事架构。你的任务是根据用户的核心创意和要求，生成一份完整、专业、高度结构化的小说创作大纲。
 你的输出必须是一个单独的、格式严谨的JSON对象。不要在JSON对象之外添加任何解释或额外的文本。
-JSON对象必须被包裹在特殊的信标中：\`[START_OUTLINE_JSON]\` 和 \`[END_OUTLINE_JSON]\`。
 
 你的思考过程：
 1. **深度解析**: 彻底分析用户的核心创意、风格、长度和仿写作者。
@@ -147,7 +146,7 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
     const system = `你是一个网络小说编辑，擅长构思吸引人的章节标题。
 你的任务是根据故事大纲和已有的章节，为后续的10个章节生成标题。
 你的输出必须是一个JSON数组的字符串形式，例如： \`["标题一", "标题二", ...]\`。
-不要添加任何额外的解释。`;
+不要添加任何额外的解释或markdown标记。`;
     const user = `故事大纲: ${outline.plotSynopsis}
 已有章节数量: ${chapters.length}
 仿写作者风格: ${options.authorStyle}
@@ -160,7 +159,7 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
 export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }, forCustomApi: boolean) => {
     const system = `你是一个由多个专家组成的AI写作顾问团队，包括首席编剧、网文分析师和第三方评论员。
 你的任务是为一个指定的章节标题，通过一个【创作-评估-优化】的迭代循环，生成一份极其详尽、深刻、专业的章节细纲。
-最终输出必须是一个包含完整迭代历史的单一JSON对象，并被包裹在信标中：\`[START_DETAILED_OUTLINE_JSON]\` 和 \`[END_DETAILED_OUTLINE_JSON]\`。
+最终输出必须是一个包含完整迭代历史的单一JSON对象。不要在JSON对象之外添加任何解释或额外的文本。
 
 **核心工作流程：**
 1.  **[编剧创作]**: 基于故事大纲、已有章节和用户输入，创作第一版章节细纲。细纲需要分解为多个关键“剧情点”。
@@ -223,7 +222,7 @@ export const getRefineDetailedOutlinePrompts = (originalOutlineJson: string, ref
     const system = `你是一个AI写作顾问团队，专门负责根据用户的反馈来优化已有的章节细纲。
 你的工作流程和能力与初次生成时完全相同：【创作-评估-优化】的迭代循环。
 关键区别在于，你的第一版草稿不是从零开始，而是基于用户提供的“原始细纲”和“优化指令”进行修改。
-最终输出仍然是包含完整历史的单一JSON对象，包裹在\`[START_DETAILED_OUTLINE_JSON]\`和\`[END_DETAILED_OUTLINE_JSON]\`信标中。`;
+最终输出仍然是包含完整历史的单一JSON对象。不要添加任何额外的文本。`;
 
     const user = `### 任务：优化细纲
 *   **章节标题**: **${chapterTitle}**

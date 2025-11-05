@@ -1,8 +1,3 @@
-// This is a Cloudflare Pages Function that acts as a secure backend.
-// It is "bimodal":
-// 1. If a custom API URL/Key is provided, it acts as a secure proxy.
-// 2. If not, it uses the built-in Google Gemini SDK with the environment's API_KEY.
-
 import { GoogleGenAI } from '@google/genai';
 import {
   getStoryOutlinePrompts,
@@ -24,10 +19,6 @@ interface PagesFunctionContext {
   };
 }
 
-// =================================================================
-// == CUSTOM OPENAI-COMPATIBLE API HELPERS
-// =================================================================
-
 // Helper to forward the request and handle the SSE stream from a custom API
 async function streamOpenAIResponse(
     apiUrl: string,
@@ -41,7 +32,7 @@ async function streamOpenAIResponse(
     const encoder = new TextEncoder();
     
     try {
-        const response = await fetch(new URL('/v1/chat/completions', apiUrl), {
+        const response = await fetch(new URL('/v1/chat/completions', apiUrl).toString(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
             body: JSON.stringify({
@@ -50,7 +41,7 @@ async function streamOpenAIResponse(
                 stream: true,
                 temperature: options.temperature,
                 top_p: (options.diversity - 0.1) / 2.0,
-                top_k: options.topK > 0 ? options.topK : undefined,
+                ...(options.topK > 0 && {top_k: options.topK}),
             }),
         });
 
@@ -79,7 +70,7 @@ async function streamOpenAIResponse(
                         if (delta) {
                             await writer.write(encoder.encode(JSON.stringify({ text: delta }) + '\n'));
                         }
-                    } catch (e) { /* Ignore parsing errors for incomplete chunks */ }
+                    } catch (e) { /* Ignore parsing errors */ }
                 }
             }
         }
@@ -94,7 +85,7 @@ async function streamOpenAIResponse(
 async function postOpenAIRequest(
     apiUrl: string, apiKey: string, model: string, messages: { role: string; content: string }[], options: StoryOptions
 ): Promise<string> {
-    const response = await fetch(new URL('/v1/chat/completions', apiUrl), {
+    const response = await fetch(new URL('/v1/chat/completions', apiUrl).toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
         body: JSON.stringify({
@@ -103,7 +94,7 @@ async function postOpenAIRequest(
             stream: false,
             temperature: options.temperature,
             top_p: (options.diversity - 0.1) / 2.0,
-            top_k: options.topK > 0 ? options.topK : undefined,
+            ...(options.topK > 0 && {top_k: options.topK}),
         }),
     });
 
@@ -115,18 +106,22 @@ async function postOpenAIRequest(
     return content;
 }
 
-// =================================================================
-// == DEFAULT GEMINI SDK HELPERS
-// =================================================================
-
 // Helper for streaming responses from the Gemini API
 async function streamGeminiResponse(
-    ai: GoogleGenAI, model: string, prompt: string, writable: WritableStream
+    ai: GoogleGenAI, model: string, prompt: string, options: StoryOptions, writable: WritableStream
 ) {
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
     try {
-        const stream = await ai.models.generateContentStream({ model, contents: prompt });
+        const stream = await ai.models.generateContentStream({ 
+            model, 
+            contents: prompt,
+            config: {
+                temperature: options.temperature,
+                topP: (options.diversity - 0.1) / 2.0,
+                topK: options.topK,
+            }
+        });
         for await (const chunk of stream) {
             const text = chunk.text;
             if (text) {
@@ -141,14 +136,18 @@ async function streamGeminiResponse(
 }
 
 // Helper for non-streaming requests to the Gemini API
-async function postGeminiRequest(ai: GoogleGenAI, model: string, prompt: string): Promise<string> {
-    const response = await ai.models.generateContent({ model, contents: prompt });
+async function postGeminiRequest(ai: GoogleGenAI, model: string, prompt: string, options: StoryOptions): Promise<string> {
+    const response = await ai.models.generateContent({ 
+        model, 
+        contents: prompt,
+        config: {
+            temperature: options.temperature,
+            topP: (options.diversity - 0.1) / 2.0,
+            topK: options.topK,
+        }
+    });
     return response.text;
 }
-
-// =================================================================
-// == MAIN API HANDLER
-// =================================================================
 
 export const onRequestPost: (context: PagesFunctionContext) => Promise<Response> = async (context) => {
     const { request, env } = context;
@@ -159,24 +158,21 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
 
         const isCustomApi = options && options.apiBaseUrl && options.apiKey;
 
-        // Handle 'listModels' action separately as it's always custom
         if (action === 'listModels') {
-            if (!isCustomApi) { // In default mode, provide default models
+            if (!isCustomApi) {
                 return new Response(JSON.stringify(['gemini-2.5-pro', 'gemini-2.5-flash']), { headers: { 'Content-Type': 'application/json' } });
             }
-            const modelResponse = await fetch(new URL('/v1/models', options.apiBaseUrl), { headers: { 'Authorization': `Bearer ${options.apiKey}` }});
+            const modelResponse = await fetch(new URL('/v1/models', options.apiBaseUrl).toString(), { headers: { 'Authorization': `Bearer ${options.apiKey}` }});
             if (!modelResponse.ok) throw new Error(`Failed to fetch models: ${modelResponse.status} - ${await modelResponse.text()}`);
             const modelData = await modelResponse.json();
             const modelIds = modelData.data.map((m: any) => m.id).sort();
             return new Response(JSON.stringify(modelIds), { headers: { 'Content-Type': 'application/json' }});
         }
         
-        // Prepare Gemini AI instance for default mode
         const ai = isCustomApi ? null : new GoogleGenAI({ apiKey: env.API_KEY || '' });
         if (!isCustomApi && !env.API_KEY) {
             throw new Error("AI Studio Mode Error: The API_KEY environment variable is not set.");
         }
-
 
         let prompt: string | { role: string; content: string }[] = '';
         let model: string = '';
@@ -184,47 +180,59 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         
         switch (action) {
             case 'generateStoryOutline':
-                isStreaming = true;
-                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
-                prompt = getStoryOutlinePrompts(restPayload.storyCore, options, isCustomApi);
-                break;
-            case 'generateChapter':
-                isStreaming = true;
-                model = isCustomApi ? options.writingModel : 'gemini-2.5-pro';
-                prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline, isCustomApi);
-                break;
-            case 'generateChapterTitles':
-                isStreaming = false;
-                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
-                prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options, isCustomApi);
-                break;
             case 'generateDetailedOutline':
-                isStreaming = true;
-                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
-                prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, restPayload.userInput, options, restPayload.iterationConfig, isCustomApi);
-                break;
             case 'refineDetailedOutline':
-                 isStreaming = true;
-                 model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
-                 prompt = getRefineDetailedOutlinePrompts(restPayload.originalOutlineJson, restPayload.refinementRequest, restPayload.chapterTitle, restPayload.storyOutline, options, restPayload.iterationConfig, isCustomApi);
-                 break;
+            case 'generateChapterTitles':
             case 'editChapterText':
-                isStreaming = false;
-                model = isCustomApi ? options.writingModel : 'gemini-2.5-pro';
-                prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options, isCustomApi);
-                break;
-            case 'generateCharacterInteraction':
-                isStreaming = true;
-                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
-                prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options, isCustomApi);
-                break;
             case 'generateNewCharacterProfile':
                 isStreaming = false;
-                model = isCustomApi ? options.planningModel : 'gemini-2.5-flash';
-                prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options, isCustomApi);
+                break;
+            case 'generateChapter':
+            case 'generateCharacterInteraction':
+                isStreaming = true;
                 break;
             default:
                 throw new Error(`Unknown action: ${action}`);
+        }
+
+        // --- Get Model and Prompt ---
+        switch (action) {
+            case 'generateStoryOutline':
+                model = options.planningModel || 'gemini-2.5-flash';
+                prompt = getStoryOutlinePrompts(restPayload.storyCore, options, isCustomApi);
+                break;
+            case 'generateChapter':
+                model = options.writingModel || 'gemini-2.5-pro';
+                prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline, isCustomApi);
+                break;
+            case 'generateChapterTitles':
+                model = options.planningModel || 'gemini-2.5-flash';
+                prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options, isCustomApi);
+                break;
+            case 'generateDetailedOutline':
+                model = options.planningModel || 'gemini-2.5-flash';
+                prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, restPayload.userInput, options, restPayload.iterationConfig, isCustomApi);
+                break;
+            case 'refineDetailedOutline':
+                 model = options.planningModel || 'gemini-2.5-flash';
+                 prompt = getRefineDetailedOutlinePrompts(restPayload.originalOutlineJson, restPayload.refinementRequest, restPayload.chapterTitle, restPayload.storyOutline, options, restPayload.iterationConfig, isCustomApi);
+                 break;
+            case 'editChapterText':
+                model = options.writingModel || 'gemini-2.5-pro';
+                prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options, isCustomApi);
+                break;
+            case 'generateCharacterInteraction':
+                model = options.planningModel || 'gemini-2.5-flash';
+                prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options, isCustomApi);
+                break;
+            case 'generateNewCharacterProfile':
+                model = options.planningModel || 'gemini-2.5-flash';
+                prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options, isCustomApi);
+                break;
+        }
+
+        if (!model) {
+            throw new Error(`No model selected for action: ${action}. Please check your settings.`);
         }
 
         // --- Execute and Respond ---
@@ -233,7 +241,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             if (isCustomApi) {
                 streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt as { role: string; content: string }[], options, writable);
             } else {
-                streamGeminiResponse(ai!, model, prompt as string, writable);
+                streamGeminiResponse(ai!, model, prompt as string, options, writable);
             }
             return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
         } else {
@@ -241,13 +249,28 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             if (isCustomApi) {
                 resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt as { role: string; content: string }[], options);
             } else {
-                resultText = await postGeminiRequest(ai!, model, prompt as string);
+                resultText = await postGeminiRequest(ai!, model, prompt as string, options);
             }
-            // Frontend expects a specific object structure for some non-streaming calls
+
             let responseBody;
-            if (action === 'generateChapterTitles') responseBody = { titlesJson: resultText };
-            else if (action === 'editChapterText' || action === 'generateNewCharacterProfile') responseBody = { text: resultText };
-            else responseBody = resultText;
+            switch (action) {
+                case 'generateStoryOutline':
+                    responseBody = { text: `[START_OUTLINE_JSON]\n${resultText}\n[END_OUTLINE_JSON]` };
+                    break;
+                case 'generateDetailedOutline':
+                case 'refineDetailedOutline':
+                    responseBody = { text: `[START_DETAILED_OUTLINE_JSON]\n${resultText}\n[END_DETAILED_OUTLINE_JSON]` };
+                    break;
+                case 'generateChapterTitles':
+                    responseBody = { titles: JSON.parse(resultText) };
+                    break;
+                case 'editChapterText':
+                case 'generateNewCharacterProfile':
+                    responseBody = { text: resultText };
+                    break;
+                default:
+                    responseBody = { text: resultText }; // Fallback
+            }
             
             return new Response(JSON.stringify(responseBody), { headers: { 'Content-Type': 'application/json' }});
         }

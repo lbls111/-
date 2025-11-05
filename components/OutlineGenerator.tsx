@@ -1,12 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
-import { generateChapterTitlesStream, generateDetailedOutlineStream, refineDetailedOutlineStream } from '../services/geminiService';
+import { generateChapterTitles, generateDetailedOutline, refineDetailedOutline } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 import SendIcon from './icons/SendIcon';
 import CopyIcon from './icons/CopyIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
-import CheckCircleIcon from './icons/CheckCircleIcon';
 
 interface OutlineGeneratorProps {
     storyOutline: StoryOutline;
@@ -174,7 +173,6 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     storyOptions
 }) => {
     const [isLoading, setIsLoading] = useState<'titles' | 'outline' | 'refine' | null>(null);
-    const [generationStatus, setGenerationStatus] = useState<string | null>(null);
     const [activeTitle, setActiveTitle] = useState<string | null>(null);
     const [userInput, setUserInput] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -195,12 +193,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setError(null);
         setActiveTitle(null);
         try {
-            const stream = await generateChapterTitlesStream(storyOutline, chapters, storyOptions);
-            let fullText = '';
-            for await (const chunk of stream) {
-                fullText += chunk.text;
-            }
-            const titles = JSON.parse(fullText);
+            const titles = await generateChapterTitles(storyOutline, chapters, storyOptions);
             // Append new titles instead of replacing
             setGeneratedTitles(prev => [...prev, ...titles]);
         } catch (e: any) {
@@ -212,36 +205,25 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     };
 
     const runIterativeOutlineGeneration = async (
-        generatorFunction: () => AsyncGenerator<any, void, undefined>
+        generatorFunction: () => Promise<{ text: string }>
     ) => {
         if (!activeTitle) return;
         setError(null);
-        setOutlineHistory(prev => ({...prev, [activeTitle]: ''})); // Pre-set for streaming
-
+        
         try {
-            const stream = generatorFunction();
-            let fullText = '';
-            for await (const chunk of stream) {
-                if(chunk.phase) {
-                    setGenerationStatus(chunk.message);
-                }
-                if (typeof chunk.text === 'string') {
-                    // In the new iterative process, the final result comes in one big chunk.
-                    fullText += chunk.text;
-                    setOutlineHistory(prev => ({...prev, [activeTitle]: fullText}));
-                }
-            }
+            const response = await generatorFunction();
+            setOutlineHistory(prev => ({...prev, [activeTitle]: response.text}));
         } catch (e: any) {
             console.error("Detailed outline generation failed:", e);
             setError(e.message || "生成细纲时发生未知错误。");
+            // Clear history for this title on failure so user can retry
             setOutlineHistory(prev => {
                 const newHistory = {...prev};
-                delete newHistory[activeTitle]; // Revert on failure
+                delete newHistory[activeTitle as string];
                 return newHistory;
             });
         } finally {
             setIsLoading(null);
-            setGenerationStatus(null);
         }
     };
 
@@ -249,7 +231,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         if (!activeTitle) return;
         setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutlineStream(storyOutline, chapters, activeTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutline(storyOutline, chapters, activeTitle, userInput, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -257,7 +239,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         if (!activeTitle) return;
         setIsLoading('outline');
         await runIterativeOutlineGeneration(() => 
-            generateDetailedOutlineStream(storyOutline, chapters, activeTitle, '', storyOptions, { maxIterations, scoreThreshold })
+            generateDetailedOutline(storyOutline, chapters, activeTitle, '', storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -267,7 +249,6 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         
         setIsLoading('refine');
         
-        // The original outline for refinement is the final version from the previous run.
         const originalParsed = parsedOutline;
         if (!originalParsed) {
             setError("无法优化，原始细纲数据无效。");
@@ -284,7 +265,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setRefinementRequest('');
         
         await runIterativeOutlineGeneration(() => 
-            refineDetailedOutlineStream(originalOutlineForRefinement, refinementInput, activeTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
+            refineDetailedOutline(originalOutlineForRefinement, refinementInput, activeTitle, storyOutline, storyOptions, { maxIterations, scoreThreshold })
         );
     };
 
@@ -293,6 +274,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         if (!activeTitle || !outlineHistory[activeTitle]) return null;
         
         const text = outlineHistory[activeTitle];
+        // This tag is different from the main story outline tag
         const startTag = '\\[START_DETAILED_OUTLINE_JSON\\]';
         const endTag = '\\[END_DETAILED_OUTLINE_JSON\\]';
     
@@ -308,7 +290,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         try {
             return JSON.parse(jsonString) as FinalDetailedOutline;
         } catch (e) {
-            console.warn("Parsing incomplete outline JSON, this is expected during streaming or on error.", e);
+            console.warn("Parsing incomplete detailed outline JSON. This might happen on error.", e);
             return null;
         }
     }, [activeTitle, outlineHistory]);
@@ -463,11 +445,11 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                     {outlineHistory[activeTitle] !== undefined && (
                         <div className="space-y-4">
                              <div className="p-4 bg-slate-950/50 rounded-lg border border-slate-700 max-h-[60rem] overflow-y-auto space-y-6">
-                                {(isLoading === 'outline' || isLoading === 'refine') ? (
+                                {isLoading ? (
                                     <div className='flex items-center justify-center text-slate-400 p-8'>
-                                        <LoadingSpinner className="w-4 h-4 mr-2"/> {generationStatus || '正在生成...'}
+                                        <LoadingSpinner className="w-4 h-4 mr-2"/> 正在生成...
                                     </div>
-                                ) : parsedOutline && (
+                                ) : parsedOutline ? (
                                     <>
                                         <div className="flex justify-between items-center pb-4 border-b border-slate-700">
                                             <h4 className="text-xl font-bold text-slate-100">终版细纲 (v{parsedOutline.finalVersion})</h4>
@@ -513,6 +495,10 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                             <OptimizationHistoryDisplay history={parsedOutline.optimizationHistory} />
                                         </div>
                                     </>
+                                ) : (
+                                    <div className="text-center py-8 text-slate-500">
+                                        细纲生成失败或数据格式错误。请尝试重新生成。
+                                    </div>
                                 )}
                             </div>
                              {/* Refinement Chatbox */}

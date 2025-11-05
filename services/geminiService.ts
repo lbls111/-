@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline } from '../types';
 
 // Helper for streaming responses from our backend
 async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
@@ -11,7 +11,7 @@ async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, vo
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
     }
 
     if (!response.body) {
@@ -54,28 +54,15 @@ async function postFetch<T>(endpoint: string, body: any): Promise<T> {
     });
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-    const jsonText = await response.text();
-    // The backend function might return a JSON string inside a JSON object
-    try {
-        const parsedOuter = JSON.parse(jsonText);
-        if (typeof parsedOuter === 'object' && parsedOuter !== null && Object.keys(parsedOuter).length === 1) {
-             const innerValue = Object.values(parsedOuter)[0];
-             if (typeof innerValue === 'string') {
-                try {
-                    // Try parsing inner value if it's a stringified JSON
-                    return JSON.parse(innerValue);
-                } catch {
-                    // fall through
-                }
-             }
+        // Try to parse error JSON from backend
+        try {
+            const errorJson = JSON.parse(errorText);
+            throw new Error(errorJson.error || `API Error: ${response.status}`);
+        } catch {
+            throw new Error(`API Error: ${response.status} - ${errorText}`);
         }
-        return parsedOuter;
     }
-    catch {
-        return jsonText as any; // Fallback for raw text
-    }
+    return response.json();
 }
 
 export const listModels = async (options: { apiBaseUrl: string, apiKey: string }): Promise<string[]> => {
@@ -85,8 +72,9 @@ export const listModels = async (options: { apiBaseUrl: string, apiKey: string }
     });
 }
 
-export const generateStoryOutlineStream = (storyCore: string, options: StoryOptions) => {
-    return streamFetch('/api', {
+// NON-STREAMING: More reliable for a critical one-off generation.
+export const generateStoryOutline = (storyCore: string, options: StoryOptions): Promise<{ text: string }> => {
+    return postFetch<{ text: string }>('/api', {
         action: 'generateStoryOutline',
         payload: { storyCore, options }
     });
@@ -104,44 +92,44 @@ export const generateChapterStream = (
     });
 };
 
-export const generateChapterTitlesStream = async (
+// NON-STREAMING: This is a quick action, streaming is overkill.
+export const generateChapterTitles = async (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     options: StoryOptions
-) => {
-    const { titlesJson } = await postFetch<{ titlesJson: string }>('/api', {
+): Promise<string[]> => {
+    const { titles } = await postFetch<{ titles: string[] }>('/api', {
         action: 'generateChapterTitles',
         payload: { outline, chapters, options }
     });
-     // Return as a stream-like object for consistency with original code
-    return (async function*() {
-        yield { text: titlesJson };
-    })();
+    return titles;
 };
 
-export async function* generateDetailedOutlineStream(
+// NON-STREAMING: The iterative process happens server-side for reliability.
+export const generateDetailedOutline = async (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     chapterTitle: string,
     userInput: string,
     options: StoryOptions,
     iterationConfig: { maxIterations: number; scoreThreshold: number; }
-): AsyncGenerator<any, void, undefined> {
-     yield* streamFetch('/api', {
+): Promise<{ text: string }> => {
+     return postFetch<{ text: string }>('/api', {
         action: 'generateDetailedOutline',
         payload: { outline, chapters, chapterTitle, userInput, options, iterationConfig }
      });
 }
 
-export async function* refineDetailedOutlineStream(
+// NON-STREAMING
+export const refineDetailedOutline = async (
     originalOutlineJson: string,
     refinementRequest: string,
     chapterTitle: string,
     storyOutline: StoryOutline,
     options: StoryOptions,
     iterationConfig: { maxIterations: number; scoreThreshold: number; }
-): AsyncGenerator<any, void, undefined> {
-     yield* streamFetch('/api', {
+): Promise<{ text: string }> => {
+     return postFetch<{ text: string }>('/api', {
         action: 'refineDetailedOutline',
         payload: { originalOutlineJson, refinementRequest, chapterTitle, storyOutline, options, iterationConfig }
      });
@@ -151,8 +139,8 @@ export const editChapterText = async (
     originalText: string,
     instruction: string,
     options: StoryOptions
-): Promise<GenerateContentResponse> => {
-     return postFetch<GenerateContentResponse>('/api', {
+): Promise<{ text: string }> => {
+     return postFetch<{ text: string }>('/api', {
         action: 'editChapterText',
         payload: { originalText, instruction, options }
     });
@@ -174,8 +162,8 @@ export const generateNewCharacterProfile = async (
     storyOutline: StoryOutline,
     characterPrompt: string,
     options: StoryOptions
-): Promise<GenerateContentResponse> => {
-    return postFetch<GenerateContentResponse>('/api', {
+): Promise<{ text: string }> => {
+    return postFetch<{ text: string }>('/api', {
         action: 'generateNewCharacterProfile',
         payload: { storyOutline, characterPrompt, options }
     });
