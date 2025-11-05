@@ -82,9 +82,14 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
 
         // Auto-select models if none are selected or if current selection is invalid
         if (chatModels.length > 0) {
+            const currentSearchModelValid = chatModels.includes(localOptions.searchModel);
             const currentPlanningModelValid = chatModels.includes(localOptions.planningModel);
             const currentWritingModelValid = chatModels.includes(localOptions.writingModel);
 
+            if (!currentSearchModelValid) {
+                 const flashModel = chatModels.find(m => m.includes('flash'));
+                 setLocalOptions(prev => ({...prev, searchModel: flashModel || chatModels[0]}));
+            }
             if (!currentPlanningModelValid) {
                  const flashModel = chatModels.find(m => m.includes('flash'));
                  setLocalOptions(prev => ({...prev, planningModel: flashModel || chatModels[0]}));
@@ -115,6 +120,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
           apiBaseUrl: DEFAULT_STORY_OPTIONS.apiBaseUrl,
           apiKey: DEFAULT_STORY_OPTIONS.apiKey,
           availableModels: DEFAULT_STORY_OPTIONS.availableModels,
+          searchModel: DEFAULT_STORY_OPTIONS.searchModel,
           planningModel: DEFAULT_STORY_OPTIONS.planningModel,
           writingModel: DEFAULT_STORY_OPTIONS.writingModel,
       }));
@@ -199,7 +205,35 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
               </div>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                 <label htmlFor="search-model" className="block text-sm font-medium text-slate-300 mb-2">
+                    搜索模型
+                </label>
+                <select
+                    id="search-model"
+                    value={localOptions.searchModel}
+                    onChange={e => handleLocalOptionChange('searchModel', e.target.value)}
+                    className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
+                    disabled={localOptions.apiBaseUrl !== '' && localOptions.availableModels.length === 0}
+                >
+                  {localOptions.apiBaseUrl === '' ? (
+                    <>
+                        <option value="gemini-2.5-flash">gemini-2.5-flash (默认)</option>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                    </>
+                  ) : (
+                    localOptions.availableModels.length > 0 ? (
+                       localOptions.availableModels.map(model => <option key={model} value={model}>{model}</option>)
+                    ) : (
+                       <option value="">请先获取模型</option>
+                    )
+                  )}
+                </select>
+                <p className="text-xs text-slate-500 mt-1">
+                    用于初始的研究与分析。建议选择速度最快的模型。
+                </p>
+            </div>
             <div>
                  <label htmlFor="planning-model" className="block text-sm font-medium text-slate-300 mb-2">
                     规划/细纲模型
@@ -225,7 +259,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                   )}
                 </select>
                 <p className="text-xs text-slate-500 mt-1">
-                    用于联网研究、世界书、角色和细纲创作。建议选择速度快的模型。
+                    用于世界书、角色和细纲创作。建议选择速度快的模型。
                 </p>
             </div>
             

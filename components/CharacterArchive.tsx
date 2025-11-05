@@ -113,8 +113,13 @@ const CharacterArchive: React.FC<CharacterArchiveProps> = ({ storyOutline, onUpd
         const stream = await generateCharacterInteractionStream(char1, char2, storyOutline, storyOptions);
         let sceneText = "";
         for await (const chunk of stream) {
-            sceneText += chunk.text;
-            setInteractionScene(sceneText);
+            if (chunk.error) {
+                throw new Error(chunk.error);
+            }
+            if (chunk.text) {
+                sceneText += chunk.text;
+                setInteractionScene(sceneText);
+            }
         }
     } catch (e: any) {
         setError(e.message || "生成互动场景时发生未知错误。");

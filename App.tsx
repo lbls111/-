@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
 import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline } from './types';
-import { generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
+import { performSearch, generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
 
 import SparklesIcon from './components/icons/SparklesIcon';
 import LoadingSpinner from './components/icons/LoadingSpinner';
@@ -70,6 +70,7 @@ export const DEFAULT_STORY_OPTIONS: StoryOptions = {
     apiBaseUrl: '',
     apiKey: '',
     availableModels: [],
+    searchModel: 'gemini-2.5-flash',
     planningModel: 'gemini-2.5-flash',
     writingModel: 'gemini-2.5-pro',
     style: '爽文 (重生复仇打脸)',
@@ -280,13 +281,12 @@ const App: React.FC = () => {
             return;
         }
         
-        if (!storyOptions.planningModel) {
-             handleError("错误：缺少规划模型。请在设置中选择一个模型或恢复默认设置。");
+        if (!storyOptions.searchModel || !storyOptions.planningModel || !storyOptions.writingModel) {
+             handleError("错误：缺少必要的模型。请在设置中选择搜索、规划和写作模型，或恢复默认设置。");
              setIsSettingsOpen(true);
              return;
         }
 
-        // If an override is used (from import or refinement), update the main state
         if (coreOverride && coreOverride !== storyCore) {
             setStoryCore(coreToUse);
         }
@@ -298,48 +298,50 @@ const App: React.FC = () => {
         setGeneratedTitles([]);
         setOutlineHistory({});
         
-        const isRefinement = !!coreOverride && coreOverride !== storyCore;
-
         const initialSteps: ThoughtStep[] = [
-            { 
-                id: 0, 
-                title: isRefinement ? "优化创作计划" : "第一步：生成完整创作计划",
-                model: storyOptions.planningModel, 
-                content: null, 
-                status: 'pending', 
-                citations: [] 
-            },
+            { id: 0, title: "第一步：深度搜索与研究", model: storyOptions.searchModel, content: null, status: 'pending' },
+            { id: 1, title: "第二步：生成完整创作计划", model: storyOptions.planningModel, content: null, status: 'pending' }
         ];
         setThoughtSteps(initialSteps);
         setGameState(GameState.PLANNING);
-        
         setTimeout(() => scrollToBottom(workspaceRef), 100);
 
+        let researchText = '';
         try {
+            // STEP 1: SEARCH
             setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running' } : s));
-            
-            // NON-STREAMING: Await the full response for reliability
-            const response = await generateStoryOutline(coreToUse, storyOptions);
-            const thoughtText = response.text;
+            const searchResponse = await performSearch(coreToUse, storyOptions);
+            researchText = searchResponse.text;
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: researchText } : s));
+        } catch (e: any) {
+            console.error("AI代理搜索步骤失败。", e);
+            if (e instanceof Error) handleError(e.message, 0);
+            return; // Stop execution if search fails
+        }
+        
+        try {
+            // STEP 2: PLAN
+            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'running' } : s));
+            const planningCore = `### 原始创意\n${coreToUse}\n\n### AI研究与分析报告\n${researchText}`;
+            const planResponse = await generateStoryOutline(planningCore, storyOptions);
+            const planText = planResponse.text;
+            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'complete', content: planText } : s));
 
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: thoughtText } : s));
-            
             try {
                 const finalOutline = extractAndParseJson<StoryOutline>(
-                    thoughtText, 
-                    '\\[START_OUTLINE_JSON\\]', 
-                    '\\[END_OUTLINE_JSON\\]', 
-                    initialSteps[0].title
+                    planText,
+                    '\\[START_OUTLINE_JSON\\]',
+                    '\\[END_OUTLINE_JSON\\]',
+                    initialSteps[1].title
                 );
                 await handlePlanningSuccess(finalOutline);
-
             } catch (assemblyError: any) {
-                 console.error("组装创作计划时出错:", assemblyError);
-                 handleError(`组装创作计划失败: ${assemblyError.message}`, 0);
+                console.error("组装创作计划时出错:", assemblyError);
+                handleError(`组装创作计划失败: ${assemblyError.message}`, 1);
             }
         } catch (e: any) {
-            console.error("AI代理规划流程失败。", e);
-            if (e instanceof Error) handleError(e.message, 0);
+            console.error("AI代理规划步骤失败。", e);
+            if (e instanceof Error) handleError(e.message, 1);
         }
     };
     
@@ -409,6 +411,9 @@ const App: React.FC = () => {
             const contentStartMarker = '[START_CHAPTER_CONTENT]';
 
             for await (const chunk of stream) {
+                if (chunk.error) {
+                    throw new Error(chunk.error);
+                }
                 if (typeof chunk.text !== 'string') continue;
                 fullText += chunk.text;
 
@@ -533,15 +538,24 @@ const App: React.FC = () => {
     };
 
     const highlightText = (text: string) => {
-        const parts = text.split(/(\【.*?】|\[START_OUTLINE_JSON\][\s\S]*?\[END_OUTLINE_JSON\])/g);
+        // First, handle JSON blocks to render them in a <pre> tag
+        const parts = text.split(/(\[START_OUTLINE_JSON\][\s\S]*?\[END_OUTLINE_JSON\]|\[START_DETAILED_OUTLINE_JSON\][\s\S]*?\[END_DETAILED_OUTLINE_JSON\])/g);
+    
         return parts.map((part, index) => {
-            if (part.startsWith('【') && part.endsWith('】')) {
-                return <strong key={index} className="text-teal-400 block mt-3 mb-1">{part}</strong>;
-            }
-             if (part.startsWith('[START_')) {
+            if (part.startsWith('[START_')) {
                 return <pre key={index} className="text-xs bg-slate-950/50 p-2 rounded-md mt-2 border border-slate-700 text-purple-300 overflow-x-auto"><code>{part}</code></pre>;
             }
-            return part;
+            // Then, handle markdown-like headers and lists within the remaining text parts
+            const subParts = part.split(/(\n###\s.*|\n\*\s.*)/g);
+            return subParts.map((subPart, subIndex) => {
+                 if (subPart.match(/^\n###\s/)) {
+                    return <h3 key={`${index}-${subIndex}`} className="text-teal-400 block mt-4 mb-2 font-bold text-base">{subPart.replace('###', '').trim()}</h3>;
+                }
+                if (subPart.match(/^\n\*\s/)) {
+                    return <p key={`${index}-${subIndex}`} className="pl-4 border-l-2 border-slate-700 my-1">{subPart.replace('*', '•').trim()}</p>;
+                }
+                return subPart;
+            });
         });
     };
     

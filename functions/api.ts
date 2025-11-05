@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import {
+  getSearchPrompts,
   getStoryOutlinePrompts,
   getChapterPrompts,
   getChapterTitlesPrompts,
@@ -237,6 +238,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'generateChapterTitles':
             case 'editChapterText':
             case 'generateNewCharacterProfile':
+            case 'performSearch':
                 isStreaming = false;
                 break;
             case 'generateChapter':
@@ -249,6 +251,10 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
 
         // --- Get Model and Prompt ---
         switch (action) {
+            case 'performSearch':
+                model = options.searchModel || 'gemini-2.5-flash';
+                prompt = getSearchPrompts(restPayload.storyCore, options, isCustomApi);
+                break;
             case 'generateStoryOutline':
                 model = options.planningModel || 'gemini-2.5-flash';
                 prompt = getStoryOutlinePrompts(restPayload.storyCore, options, isCustomApi);
@@ -327,6 +333,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                     responseBody = { text: jsonText };
                     break;
                 }
+                case 'performSearch':
                 case 'editChapterText':
                     responseBody = { text: resultText };
                     break;

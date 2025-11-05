@@ -21,6 +21,7 @@ export interface StoryOptions {
     apiBaseUrl: string;
     apiKey: string;
     availableModels: string[];
+    searchModel: string;
     planningModel: string;
     writingModel: string;
     

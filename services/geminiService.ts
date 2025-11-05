@@ -72,6 +72,14 @@ export const listModels = async (options: { apiBaseUrl: string, apiKey: string }
     });
 }
 
+// NON-STREAMING: The initial research step before planning.
+export const performSearch = (storyCore: string, options: StoryOptions): Promise<{ text: string }> => {
+    return postFetch<{ text: string }>('/api', {
+        action: 'performSearch',
+        payload: { storyCore, options }
+    });
+};
+
 // NON-STREAMING: More reliable for a critical one-off generation.
 export const generateStoryOutline = (storyCore: string, options: StoryOptions): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
