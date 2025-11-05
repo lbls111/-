@@ -19,6 +19,58 @@ interface PagesFunctionContext {
   };
 }
 
+// Helper to extract JSON from a string that might contain other text.
+const extractJsonFromText = (text: string): string => {
+    // First, look for a JSON block in markdown
+    const markdownMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (markdownMatch && markdownMatch[1]) {
+        try {
+            // Validate it's parseable before returning
+            JSON.parse(markdownMatch[1]);
+            return markdownMatch[1];
+        } catch (e) {
+            // Ignore if not valid json, and proceed to next method
+        }
+    }
+
+    // If no markdown, find the first '{' or '[' and last '}' or ']'
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    const firstBracket = text.indexOf('[');
+    const lastBracket = text.lastIndexOf(']');
+
+    let potentialJson = '';
+
+    // Heuristic to decide if it's an object or an array
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+        if (firstBracket === -1 || firstBrace < firstBracket) {
+            // Likely a JSON object
+            potentialJson = text.substring(firstBrace, lastBrace + 1);
+        }
+    }
+    
+    if (!potentialJson && firstBracket !== -1 && lastBracket > firstBracket) {
+        // Likely a JSON array
+        potentialJson = text.substring(firstBracket, lastBracket + 1);
+    }
+
+    if (potentialJson) {
+        try {
+            // Validate it's parseable before returning
+            JSON.parse(potentialJson);
+            return potentialJson;
+        } catch (e) {
+             // Ignore if not valid json, and fall through
+        }
+    }
+
+    // If no valid JSON found, return the original text.
+    // This maintains the original behavior for cases where the LLM gives a completely non-JSON error message,
+    // allowing the user to see the raw error from the model.
+    return text;
+};
+
+
 // Helper to forward the request and handle the SSE stream from a custom API
 async function streamOpenAIResponse(
     apiUrl: string,
@@ -254,18 +306,28 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
 
             let responseBody;
             switch (action) {
-                case 'generateStoryOutline':
-                    responseBody = { text: `[START_OUTLINE_JSON]\n${resultText}\n[END_OUTLINE_JSON]` };
+                case 'generateStoryOutline': {
+                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
+                    responseBody = { text: `[START_OUTLINE_JSON]\n${jsonText}\n[END_OUTLINE_JSON]` };
                     break;
+                }
                 case 'generateDetailedOutline':
-                case 'refineDetailedOutline':
-                    responseBody = { text: `[START_DETAILED_OUTLINE_JSON]\n${resultText}\n[END_DETAILED_OUTLINE_JSON]` };
+                case 'refineDetailedOutline': {
+                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
+                    responseBody = { text: `[START_DETAILED_OUTLINE_JSON]\n${jsonText}\n[END_DETAILED_OUTLINE_JSON]` };
                     break;
-                case 'generateChapterTitles':
-                    responseBody = { titles: JSON.parse(resultText) };
+                }
+                case 'generateChapterTitles': {
+                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
+                    responseBody = { titles: JSON.parse(jsonText) };
                     break;
+                }
+                case 'generateNewCharacterProfile': {
+                    const jsonText = isCustomApi ? extractJsonFromText(resultText) : resultText;
+                    responseBody = { text: jsonText };
+                    break;
+                }
                 case 'editChapterText':
-                case 'generateNewCharacterProfile':
                     responseBody = { text: resultText };
                     break;
                 default:
