@@ -158,7 +158,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
               
                 <div className="space-y-4">
                      <div className='space-y-4 p-4 border border-slate-700 rounded-lg bg-slate-900/50'>
-                         <p className="text-sm text-slate-400">本应用需要连接到一个与OpenAI兼容的外部API才能工作，例如Groq, SillyTavern等。</p>
+                         <p className="text-sm text-slate-400">本应用需要连接到一个与OpenAI兼容的外部API才能工作。</p>
                         <div>
                             <label htmlFor="api-base-url" className="block text-sm font-medium text-slate-300 mb-2">
                                 API 地址 (Base URL)
@@ -168,7 +168,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                                 type="text"
                                 value={localOptions.apiBaseUrl}
                                 onChange={e => handleLocalOptionChange('apiBaseUrl', e.target.value)}
-                                placeholder="例如: https://api.groq.com/openai"
+                                placeholder="例如: https://.../v1"
                                 className="w-full p-3 bg-slate-800/70 border border-slate-600 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
                             />
                         </div>

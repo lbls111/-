@@ -181,7 +181,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     // Iteration controls
-    const [maxIterations, setMaxIterations] = useState(3);
+    const [maxIterations, setMaxIterations] = useState(5);
     const [scoreThreshold, setScoreThreshold] = useState(8.0);
 
     // State for interactive refinement
@@ -406,7 +406,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                         id="max-iterations"
                                         type="range"
                                         min="1"
-                                        max="5"
+                                        max="10"
                                         step="1"
                                         value={maxIterations}
                                         onChange={e => setMaxIterations(parseInt(e.target.value))}
@@ -425,7 +425,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     type="text"
                                     value={userInput}
                                     onChange={e => setUserInput(e.target.value)}
-                                    placeholder="例如：增加一个女性反派角色..."
+                                    placeholder="输入优化或指导（可选）"
                                     className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm"
                                     disabled={!!isLoading}
                                 />
@@ -511,7 +511,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     id="refinement-request"
                                     value={refinementRequest}
                                     onChange={e => setRefinementRequest(e.target.value)}
-                                    placeholder="输入优化指令，例如：让主角的动机更复杂一些..."
+                                    placeholder="输入优化指令..."
                                     rows={3}
                                     className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-sky-500 transition text-sm resize-y"
                                     disabled={!!isLoading}

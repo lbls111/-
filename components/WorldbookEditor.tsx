@@ -166,7 +166,7 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
                         type="text"
                         value={newCategoryName}
                         onChange={(e) => setNewCategoryName(e.target.value)}
-                        placeholder="新分类名称，例如：历史事件"
+                        placeholder="新分类名称..."
                         className="flex-grow p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200"
                     />
                     <button onClick={handleAddCategory} className="p-2 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-lg transition-colors flex-shrink-0">
@@ -192,7 +192,7 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
                         type="text"
                         value={newKey}
                         onChange={(e) => setNewKey(e.target.value)}
-                        placeholder="例如: 天穹市 or 虚空之触"
+                        placeholder="输入关键词..."
                         className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200"
                     />
                  </div>

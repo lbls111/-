@@ -820,7 +820,7 @@ const App: React.FC = () => {
                 <p className="text-slate-400 mb-8">输入核心创意。AI将自主研究、构思、决策并创作一部属于你的小说。</p>
                 <textarea
                     className="w-full h-28 p-4 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition"
-                    placeholder="例如：一个底层程序员意外发现，他写的代码注释能够影响现实世界..."
+                    placeholder="输入您的核心创意或故事概念..."
                     value={storyCore}
                     onChange={(e) => setStoryCore(e.target.value)}
                     aria-label="Story Core Idea"

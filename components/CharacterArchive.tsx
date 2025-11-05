@@ -226,7 +226,7 @@ const CharacterArchive: React.FC<CharacterArchiveProps> = ({ storyOutline, onUpd
                             type="text"
                             value={newCharacterPrompt}
                             onChange={(e) => setNewCharacterPrompt(e.target.value)}
-                            placeholder="例如：一个愤世嫉俗的前城防队长"
+                            placeholder="输入新角色的核心概念..."
                             className="w-full p-2 bg-slate-800 border border-slate-600 rounded-md text-slate-200 text-sm focus:ring-1 focus:ring-sky-500"
                             disabled={isLoading === 'new'}
                         />
@@ -309,8 +309,8 @@ const CharacterArchive: React.FC<CharacterArchiveProps> = ({ storyOutline, onUpd
                         </div>
                     ))}
                      <div className="flex items-center gap-2 mt-3">
-                        <input type="text" value={newCustomFieldKey} onChange={e => setNewCustomFieldKey(e.target.value)} placeholder="字段名 (e.g. 灵根)" className="w-1/3 p-1.5 bg-slate-900 border border-slate-600 rounded-md text-slate-200 text-sm" />
-                        <input type="text" value={newCustomFieldValue} onChange={e => setNewCustomFieldValue(e.target.value)} placeholder="字段值 (e.g. 天品混沌灵根)" className="flex-grow p-1.5 bg-slate-900 border border-slate-600 rounded-md text-slate-200 text-sm" />
+                        <input type="text" value={newCustomFieldKey} onChange={e => setNewCustomFieldKey(e.target.value)} placeholder="字段名" className="w-1/3 p-1.5 bg-slate-900 border border-slate-600 rounded-md text-slate-200 text-sm" />
+                        <input type="text" value={newCustomFieldValue} onChange={e => setNewCustomFieldValue(e.target.value)} placeholder="字段值" className="flex-grow p-1.5 bg-slate-900 border border-slate-600 rounded-md text-slate-200 text-sm" />
                         <button type="button" onClick={addCustomField} className="p-1.5 rounded-full bg-green-600 hover:bg-green-500"><PlusCircleIcon className="w-5 h-5 text-white"/></button>
                     </div>
                 </div>
