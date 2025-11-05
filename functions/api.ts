@@ -20,54 +20,64 @@ interface PagesFunctionContext {
   };
 }
 
-// Helper to extract JSON from a string that might contain other text.
+// A more robust helper to extract a JSON object or array from a string.
 const extractJsonFromText = (text: string): string => {
-    // First, look for a JSON block in markdown
+    // 1. Try to find JSON within markdown code blocks first.
     const markdownMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (markdownMatch && markdownMatch[1]) {
         try {
-            // Validate it's parseable before returning
             JSON.parse(markdownMatch[1]);
-            return markdownMatch[1];
+            return markdownMatch[1].trim();
         } catch (e) {
-            // Ignore if not valid json, and proceed to next method
+            // Malformed JSON in code block, fall through to next method.
         }
     }
 
-    // If no markdown, find the first '{' or '[' and last '}' or ']'
+    // 2. Find the first '{' or '[' to signal the start of a JSON structure.
+    let startIndex = -1;
     const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
     const firstBracket = text.indexOf('[');
-    const lastBracket = text.lastIndexOf(']');
 
-    let potentialJson = '';
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        startIndex = firstBrace;
+    } else if (firstBracket !== -1) {
+        startIndex = firstBracket;
+    }
 
-    // Heuristic to decide if it's an object or an array
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-        if (firstBracket === -1 || firstBrace < firstBracket) {
-            // Likely a JSON object
-            potentialJson = text.substring(firstBrace, lastBrace + 1);
+    if (startIndex === -1) {
+        // No JSON object or array signature found. Return original text for debugging.
+        return text;
+    }
+
+    // 3. Scan from the start to find the matching closing character.
+    const startChar = text[startIndex];
+    const endChar = startChar === '{' ? '}' : ']';
+    let openCount = 0;
+
+    for (let i = startIndex; i < text.length; i++) {
+        if (text[i] === startChar) {
+            openCount++;
+        } else if (text[i] === endChar) {
+            openCount--;
+        }
+
+        if (openCount === 0) {
+            // We found the end of the JSON structure.
+            const potentialJson = text.substring(startIndex, i + 1);
+            try {
+                // Final validation.
+                JSON.parse(potentialJson);
+                return potentialJson;
+            } catch (e) {
+                // The balanced substring is not valid JSON. This can happen with corrupted data.
+                // We break and fall through to the last-resort return.
+                break; 
+            }
         }
     }
-    
-    if (!potentialJson && firstBracket !== -1 && lastBracket > firstBracket) {
-        // Likely a JSON array
-        potentialJson = text.substring(firstBracket, lastBracket + 1);
-    }
 
-    if (potentialJson) {
-        try {
-            // Validate it's parseable before returning
-            JSON.parse(potentialJson);
-            return potentialJson;
-        } catch (e) {
-             // Ignore if not valid json, and fall through
-        }
-    }
-
-    // If no valid JSON found, return the original text.
-    // This maintains the original behavior for cases where the LLM gives a completely non-JSON error message,
-    // allowing the user to see the raw error from the model.
+    // 4. If all else fails (e.g., malformed/unbalanced JSON), return the original text.
+    // This allows the frontend to see the raw model output for error diagnosis.
     return text;
 };
 
