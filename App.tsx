@@ -368,30 +368,34 @@ const App: React.FC = () => {
 
         const newOutline: Partial<StoryOutline> = {};
     
-        const extractSection = (start: string, end: string): string => {
-            const startIndex = markdown.indexOf(start);
-            if (startIndex === -1) return '';
-            const endIndex = markdown.indexOf(end, startIndex);
-            const content = markdown.substring(startIndex + start.length, endIndex === -1 ? undefined : endIndex);
-            return content.trim();
+        // FIX: Replaced brittle `indexOf` logic with a robust RegEx-based section extractor.
+        const extractSection = (text: string, heading: string): string => {
+            // This regex finds a markdown heading (e.g., "## Plot Synopsis") and captures all content
+            // until the next heading of the same or higher level (e.g., another "##" or "#"), or the end of the string.
+            // It's case-insensitive and handles variable whitespace.
+            const regex = new RegExp(`#{2,}\\s*${heading}\\s*\\n([\\s\\S]*?)(?=\\n#{2,}\\s|$)`, 'i');
+            const match = text.match(regex);
+            return match ? match[1].trim() : '';
         };
 
         const extractListItem = (textBlock: string, key: string): string => {
+            // This regex is already robust, so we keep it.
             const regex = new RegExp(`- \\*\\*${key}\\*\\*:\\s*([\\s\\S]*?)(?=\\n- \\*\\*|$)`, 'i');
             const match = textBlock.match(regex);
             return match ? match[1].trim() : '';
         };
     
-        newOutline.title = markdown.match(/# Title:\s*(.*)/)?.[1]?.trim() || '无标题';
+        newOutline.title = markdown.match(/#\s*Title:\s*(.*)/i)?.[1]?.trim() || '无标题';
     
-        newOutline.genreAnalysis = extractSection('## Genre Analysis', '## World Concept');
-        newOutline.worldConcept = extractSection('## World Concept', '## Plot Synopsis');
-        newOutline.plotSynopsis = extractSection('## Plot Synopsis', '## Characters');
+        newOutline.genreAnalysis = extractSection(markdown, 'Genre Analysis');
+        newOutline.worldConcept = extractSection(markdown, 'World Concept');
+        newOutline.plotSynopsis = extractSection(markdown, 'Plot Synopsis');
     
-        const charactersText = extractSection('## Characters', '## Worldbook');
+        const charactersText = extractSection(markdown, 'Characters');
         const characterBlocks = charactersText.split(/\n---\n/);
         newOutline.characters = characterBlocks.map(block => {
-            const name = block.match(/### (.*)/)?.[1]?.trim();
+            if (!block.trim()) return null;
+            const name = block.match(/###\s*(.*)/)?.[1]?.trim();
             if (!name) return null;
     
             const profile: CharacterProfile = {
@@ -407,11 +411,12 @@ const App: React.FC = () => {
             return profile;
         }).filter((p): p is CharacterProfile => p !== null && p.name !== '' && p.coreConcept !== '');
     
-        const worldbookText = extractSection('## Worldbook', '## Writing Style Guide');
+        const worldbookText = extractSection(markdown, 'Worldbook');
         const categoryBlocks = worldbookText.split(/\n---\n/);
         newOutline.worldCategories = categoryBlocks.map(block => {
+            if (!block.trim()) return null;
             const lines = block.trim().split('\n');
-            const nameMatch = lines[0].match(/### (.*)/);
+            const nameMatch = lines[0].match(/###\s*(.*)/);
             if (!nameMatch) return null;
             const name = nameMatch[1].trim();
             const entries: WorldEntry[] = lines.slice(1).map(line => {
@@ -426,6 +431,11 @@ const App: React.FC = () => {
         newOutline.antiPatternGuide = DEFAULT_ANTI_PATTERN_GUIDE;
         
         if (!newOutline.plotSynopsis || !newOutline.characters || newOutline.characters.length === 0 || !newOutline.worldCategories || newOutline.worldCategories.length === 0) {
+            console.error('解析失败详情:', {
+                plot: !!newOutline.plotSynopsis,
+                chars: newOutline.characters?.length,
+                world: newOutline.worldCategories?.length,
+            });
             throw new Error("Markdown解析失败：未能从AI的输出中提取出必要的结构（剧情大纲、角色、世界书）。请检查AI模型的输出是否遵循了指定的格式。");
         }
 
