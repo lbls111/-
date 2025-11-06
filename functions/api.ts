@@ -163,7 +163,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                  const encoder = new TextEncoder();
 
                  (async () => {
-                    let currentOutline = (action === 'refineDetailedOutline') ? restPayload.originalOutlineJson : "";
+                    let currentOutlineJson = (action === 'refineDetailedOutline') ? restPayload.originalOutlineJson : "{}";
                     let optimizationHistory = [];
                     
                     try {
@@ -171,23 +171,23 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                             const progress: OutlineGenerationProgress = {
                                 status: 'refining', version: i, maxVersions: restPayload.iterationConfig.maxIterations,
                                 score: optimizationHistory[optimizationHistory.length - 1]?.critique.overallScore || 0,
-                                message: `v${i}: 编剧正在创作新稿...`
+                                message: `v${i}: 叙事架构师正在构思新稿...`
                             };
                             await writer.write(encoder.encode(JSON.stringify({ progress }) + '\n'));
                             
                             let iterationPrompt;
-                            if (i === 1 && action === 'generateDetailedOutline') {
+                             if (i === 1) {
+                                // For the very first iteration of either action, use the 'prompt' variable generated outside the loop.
+                                // This correctly handles both a fresh generation and a user-initiated refinement.
                                 iterationPrompt = prompt;
                             } else {
-                                const refinementMessage = (i === 1 && action === 'refineDetailedOutline')
-                                    ? restPayload.refinementRequest
-                                    : `这是第${i}轮优化。请根据上一轮的优化建议进行修改。`;
-
+                                // For all subsequent iterations, it's always an auto-refinement based on the last critique.
+                                const refinementMessage = `这是第${i}轮优化。请根据上一轮的优化建议进行修改。`;
                                 iterationPrompt = getRefineDetailedOutlinePrompts(
-                                    currentOutline,
+                                    currentOutlineJson,
                                     refinementMessage,
                                     restPayload.chapterTitle,
-                                    restPayload.outline,
+                                    restPayload.storyOutline,
                                     options,
                                     restPayload.iterationConfig
                                 );
@@ -196,7 +196,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                             const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, iterationPrompt, options);
                             const parsedJson = JSON.parse(extractJsonFromText(resultText));
                             
-                            currentOutline = JSON.stringify({ plotPoints: parsedJson.plotPoints, nextChapterPreview: parsedJson.nextChapterPreview });
+                            currentOutlineJson = JSON.stringify({ plotPoints: parsedJson.plotPoints, nextChapterPreview: parsedJson.nextChapterPreview });
                             optimizationHistory = parsedJson.optimizationHistory;
                             const latestCritique = parsedJson.optimizationHistory[parsedJson.optimizationHistory.length - 1]?.critique;
 
@@ -207,7 +207,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                             };
                             await writer.write(encoder.encode(JSON.stringify({ progress: progressCritique }) + '\n'));
 
-                            // PER-ITERATION SAVE
+                            // PER-ITERATION SAVE: Send the full result back to the client.
                             await writer.write(encoder.encode(JSON.stringify({ result: `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(parsedJson, null, 2)}\n[END_DETAILED_OUTLINE_JSON]` }) + '\n'));
 
                             if (latestCritique && latestCritique.overallScore >= restPayload.iterationConfig.scoreThreshold) {
