@@ -240,8 +240,6 @@ const App: React.FC = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
 
-    const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
-
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
     const planRefinementInputRef = useRef<HTMLTextAreaElement>(null);
@@ -710,20 +708,6 @@ const App: React.FC = () => {
             planRefinementInputRef.current.focus();
         }
     };
-    
-    const handleOutlineGenerationStart = () => {
-        setIsGeneratingOutline(true);
-        addLog("细纲生成/优化开始。", 'info');
-    };
-    
-    const handleOutlineGenerationEnd = (errorOccurred: boolean) => {
-        setIsGeneratingOutline(false);
-        if (errorOccurred) {
-            addLog("细纲生成/优化因错误而终止。", 'error');
-        } else {
-            addLog("细纲生成/优化完成。", 'success');
-        }
-    };
 
     const renderThoughtStepContent = (step: ThoughtStep) => {
         if (!step.content) return null;
@@ -1003,7 +987,7 @@ const App: React.FC = () => {
             </button>
         );
 
-        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing || isGeneratingOutline;
+        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing;
 
         return (
             <div className="h-screen flex flex-col">
@@ -1142,9 +1126,6 @@ const App: React.FC = () => {
                                 storyOptions={storyOptions}
                                 activeOutlineTitle={activeOutlineTitle}
                                 setActiveOutlineTitle={setActiveOutlineTitle}
-                                isGenerating={isGeneratingOutline}
-                                onGenerationStart={handleOutlineGenerationStart}
-                                onGenerationEnd={handleOutlineGenerationEnd}
                              />
                         )}
                         {activeTab === 'writing' && (

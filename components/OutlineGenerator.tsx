@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis, OutlineGenerationProgress } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
 import { generateChapterTitles, generateSingleOutlineIteration, generateNarrativeToolboxSuggestions } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -18,10 +18,6 @@ interface OutlineGeneratorProps {
     storyOptions: StoryOptions;
     activeOutlineTitle: string | null;
     setActiveOutlineTitle: React.Dispatch<React.SetStateAction<string | null>>;
-    isGenerating: boolean;
-    onGenerationStart: (initialProgress: OutlineGenerationProgress) => void;
-    onGenerationProgress: (progress: OutlineGenerationProgress) => void;
-    onGenerationEnd: () => void;
 }
 
 const AnalysisField: React.FC<{ label: string; value: any; color: string }> = ({ label, value, color }) => {
@@ -185,19 +181,11 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     storyOptions,
     activeOutlineTitle,
     setActiveOutlineTitle,
-    isGenerating,
-    onGenerationStart,
-    onGenerationProgress,
-    onGenerationEnd
 }) => {
+    const [isLoading, setIsLoading] = useState(false);
     const [isLoadingTitles, setIsLoadingTitles] = useState(false);
     const [userInput, setUserInput] = useState('');
     const [error, setError] = useState<string | null>(null);
-
-    const [maxIterations, setMaxIterations] = useState(5);
-    const [scoreThreshold, setScoreThreshold] = useState(8.0);
-
-    const [refinementRequest, setRefinementRequest] = useState('');
     
     const [isCopied, setIsCopied] = useState(false);
 
@@ -237,90 +225,62 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         }
     };
 
-    const startGenerationProcess = async (isRefinement: boolean = false, refinementPrompt: string = '') => {
+    const handleGenerateIteration = async () => {
         if (!activeOutlineTitle) return;
 
+        setIsLoading(true);
         setError(null);
-        let historyForThisRun: OptimizationHistoryEntry[] = [];
-        let latestOutline: DetailedOutlineAnalysis | null = null;
-        let latestCritique: OutlineCritique | null = null;
-        let startVersion = 1;
-
-        if (isRefinement && parsedOutline) {
-            historyForThisRun = [...parsedOutline.optimizationHistory];
-            startVersion = parsedOutline.finalVersion + 1;
-            latestOutline = { plotPoints: parsedOutline.plotPoints, nextChapterPreview: parsedOutline.nextChapterPreview };
-            latestCritique = historyForThisRun.length > 0 ? historyForThisRun[historyForThisRun.length - 1].critique : null;
-        } else {
-             setOutlineHistory(prev => { // Clear previous result before starting
-                const newHistory = {...prev};
-                delete newHistory[activeOutlineTitle];
-                return newHistory;
-            });
-        }
-        
-        onGenerationStart({ status: 'refining', version: startVersion, maxVersions: startVersion + maxIterations -1, score: latestCritique?.overallScore || 0, message: `开始生成 v${startVersion}...` });
 
         try {
-            for (let i = 0; i < maxIterations; i++) {
-                const currentVersion = startVersion + i;
-                
-                onGenerationProgress({
-                    status: 'refining', version: currentVersion, maxVersions: startVersion + maxIterations -1,
-                    score: latestCritique?.overallScore || 0,
-                    message: `v${currentVersion}: 叙事架构师正在构思新稿...`
+            const isRefinement = !!parsedOutline;
+            let historyForThisRun: OptimizationHistoryEntry[] = [];
+            let latestOutline: DetailedOutlineAnalysis | null = null;
+            let latestCritique: OutlineCritique | null = null;
+            let currentVersion = 1;
+
+            if (isRefinement && parsedOutline) {
+                historyForThisRun = [...parsedOutline.optimizationHistory];
+                currentVersion = parsedOutline.finalVersion + 1;
+                latestOutline = { plotPoints: parsedOutline.plotPoints, nextChapterPreview: parsedOutline.nextChapterPreview };
+                latestCritique = historyForThisRun.length > 0 ? historyForThisRun[historyForThisRun.length - 1].critique : null;
+            } else {
+                setOutlineHistory(prev => { // Clear previous result before starting a new one
+                    const newHistory = {...prev};
+                    delete newHistory[activeOutlineTitle];
+                    return newHistory;
                 });
-
-                const response = await generateSingleOutlineIteration(
-                    storyOutline, chapters, activeOutlineTitle, storyOptions,
-                    latestOutline ? { outline: latestOutline, critique: latestCritique! } : null,
-                    i === 0 ? (isRefinement ? refinementPrompt : userInput) : '' // Pass user input only on the first iteration of a new run
-                );
-
-                latestOutline = response.outline;
-                latestCritique = response.critique;
-
-                const newHistoryEntry: OptimizationHistoryEntry = {
-                    version: currentVersion,
-                    critique: latestCritique,
-                    outline: latestOutline
-                };
-                historyForThisRun.push(newHistoryEntry);
-                
-                const finalResultForState: FinalDetailedOutline = {
-                    ...latestOutline,
-                    finalVersion: currentVersion,
-                    optimizationHistory: historyForThisRun
-                };
-                
-                const resultString = `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(finalResultForState, null, 2)}\n[END_DETAILED_OUTLINE_JSON]`;
-                setOutlineHistory(prev => ({ ...prev, [activeOutlineTitle]: resultString }));
-                
-                onGenerationProgress({
-                    status: 'critiquing', version: currentVersion, maxVersions: startVersion + maxIterations - 1,
-                    score: latestCritique.overallScore,
-                    message: `v${currentVersion} 评估完成 - 分数: ${latestCritique.overallScore.toFixed(1)}`
-                });
-
-                if (latestCritique.overallScore >= scoreThreshold) {
-                    break; 
-                }
             }
+
+            const response = await generateSingleOutlineIteration(
+                storyOutline, chapters, activeOutlineTitle, storyOptions,
+                latestOutline ? { outline: latestOutline, critique: latestCritique! } : null,
+                userInput
+            );
+
+            setUserInput(''); // Clear input after use
+
+            const newHistoryEntry: OptimizationHistoryEntry = {
+                version: currentVersion,
+                critique: response.critique,
+                outline: response.outline
+            };
+            historyForThisRun.push(newHistoryEntry);
+            
+            const finalResultForState: FinalDetailedOutline = {
+                ...response.outline,
+                finalVersion: currentVersion,
+                optimizationHistory: historyForThisRun
+            };
+            
+            const resultString = `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(finalResultForState, null, 2)}\n[END_DETAILED_OUTLINE_JSON]`;
+            setOutlineHistory(prev => ({ ...prev, [activeOutlineTitle]: resultString }));
+
         } catch (e: any) {
             const errorMessage = e.message || "生成细纲时发生未知错误。";
             setError(errorMessage);
-            onGenerationProgress({ status: 'error', version: 0, maxVersions: maxIterations, score: 0, message: errorMessage });
         } finally {
-            onGenerationEnd();
+            setIsLoading(false);
         }
-    };
-    
-    const handleRefineOutline = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!refinementRequest.trim() || !parsedOutline) return;
-        const prompt = refinementRequest;
-        setRefinementRequest('');
-        startGenerationProcess(true, prompt);
     };
 
     const handleCopy = () => {
@@ -368,7 +328,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
             <div className="border-t border-white/10 pt-4">
                 <button
                     onClick={handleGenerateTitles}
-                    disabled={isGenerating || isLoadingTitles}
+                    disabled={isLoading || isLoadingTitles}
                     className="w-full flex items-center justify-center px-4 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
                 >
                     {isLoadingTitles ? <LoadingSpinner className="w-5 h-5 mr-2" /> : <SparklesIcon className="w-5 h-5 mr-2" />}
@@ -384,7 +344,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                             <button 
                                 key={index} 
                                 onClick={() => { setActiveOutlineTitle(title); setError(null); }}
-                                disabled={isGenerating}
+                                disabled={isLoading}
                                 className={`p-3 text-left rounded-md text-sm transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${activeOutlineTitle === title ? 'bg-teal-600 text-white font-semibold' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}`}
                             >
                                 <span className="font-mono text-xs opacity-70 mr-2">{chapters.length + index + 1}.</span> {title}
@@ -398,19 +358,10 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                 <div className="border-t border-white/10 pt-4 space-y-4">
                     <div className="flex justify-between items-center">
                         <h3 className="text-lg font-semibold text-slate-200">
-                            {outlineHistory[activeOutlineTitle] !== undefined ? '细纲分析 / 优化' : '为'}<span className="text-teal-400 mx-1">“{activeOutlineTitle}”</span>生成细纲分析
+                            {parsedOutline ? '细纲分析 / 优化' : '为'}<span className="text-teal-400 mx-1">“{activeOutlineTitle}”</span>生成细纲分析
                         </h3>
-                        {parsedOutline && (
+                         {parsedOutline && (
                             <div className="flex items-center gap-x-2">
-                                <button
-                                    onClick={() => startGenerationProcess(false)}
-                                    className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors disabled:opacity-50"
-                                    disabled={isGenerating}
-                                    title="重新生成"
-                                >
-                                    <RefreshCwIcon className="w-3.5 h-3.5"/>
-                                    <span>重新生成</span>
-                                </button>
                                 <button
                                     onClick={handleCopy}
                                     className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors disabled:opacity-50"
@@ -423,70 +374,33 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                         )}
                     </div>
                     
-                    {!parsedOutline && (
-                        <div className='p-4 rounded-lg bg-slate-900/50 space-y-4'>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="score-threshold" className="flex justify-between text-xs font-medium text-slate-400 mb-1">
-                                       <span>质量目标评分</span>
-                                       <span className="font-bold text-sky-300">{scoreThreshold.toFixed(1)} / 10.0</span>
-                                    </label>
-                                     <input
-                                        id="score-threshold"
-                                        type="range"
-                                        min="6.0"
-                                        max="9.5"
-                                        step="0.5"
-                                        value={scoreThreshold}
-                                        onChange={e => setScoreThreshold(parseFloat(e.target.value))}
-                                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                                        disabled={isGenerating}
-                                    />
-                                </div>
-                                <div>
-                                    <label htmlFor="max-iterations" className="flex justify-between text-xs font-medium text-slate-400 mb-1">
-                                       <span>最大优化次数</span>
-                                       <span className="font-bold text-sky-300">{maxIterations}</span>
-                                    </label>
-                                     <input
-                                        id="max-iterations"
-                                        type="range"
-                                        min="1"
-                                        max="10"
-                                        step="1"
-                                        value={maxIterations}
-                                        onChange={e => setMaxIterations(parseInt(e.target.value))}
-                                        className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                                        disabled={isGenerating}
-                                    />
-                                </div>
-                            </div>
-                            
+                    <div className='p-4 rounded-lg bg-slate-900/50 space-y-4'>
+                        <form onSubmit={(e) => { e.preventDefault(); handleGenerateIteration(); }} className="space-y-3">
                             <div>
                                 <label htmlFor="outline-prompt" className="block text-xs font-medium text-slate-400 mb-1">
-                                    优化或指导 (可选)
+                                    {parsedOutline ? `优化 v${parsedOutline.finalVersion + 1} 指令 (可选)`: '初稿生成指令 (可选)'}
                                 </label>
-                                <input
+                                <textarea
                                     id="outline-prompt"
-                                    type="text"
                                     value={userInput}
                                     onChange={e => setUserInput(e.target.value)}
-                                    placeholder="输入优化或指导（可选）"
-                                    className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm"
-                                    disabled={isGenerating}
+                                    placeholder={parsedOutline ? "例如：让冲突更激烈一些，增加一个反转..." : "例如：引入一个新角色，从他的视角展开..."}
+                                    rows={3}
+                                    className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-cyan-500 transition text-sm resize-y"
+                                    disabled={isLoading}
                                 />
                             </div>
 
                             <button
-                                onClick={() => startGenerationProcess(false)}
-                                disabled={isGenerating}
+                                type="submit"
+                                disabled={isLoading}
                                 className="w-full flex items-center justify-center px-4 py-2 bg-cyan-600 text-white font-bold rounded-lg hover:bg-cyan-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
                             >
-                                <SparklesIcon className="w-5 h-5 mr-2" />
-                                生成本章细纲分析
+                                {isLoading ? <LoadingSpinner className="w-5 h-5 mr-2"/> : <SparklesIcon className="w-5 h-5 mr-2" />}
+                                {isLoading ? '正在生成...' : (parsedOutline ? `生成优化稿 (v${parsedOutline.finalVersion + 1})` : '生成初稿 (v1)')}
                             </button>
-                        </div>
-                    )}
+                        </form>
+                    </div>
 
                     {error && <p className="text-sm text-red-400 bg-red-900/30 p-2 rounded-md">{error}</p>}
                     
@@ -537,28 +451,6 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     <OptimizationHistoryDisplay history={parsedOutline.optimizationHistory} />
                                 </div>
                             </div>
-                             <form onSubmit={handleRefineOutline} className="p-4 bg-slate-900/50 rounded-lg space-y-3">
-                                <label htmlFor="refinement-request" className="block text-sm font-medium text-slate-300">细纲优化</label>
-                                <textarea
-                                    id="refinement-request"
-                                    value={refinementRequest}
-                                    onChange={e => setRefinementRequest(e.target.value)}
-                                    placeholder="输入优化指令..."
-                                    rows={3}
-                                    className="w-full p-2 bg-slate-800/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-1 focus:ring-sky-500 transition text-sm resize-y"
-                                    disabled={isGenerating}
-                                />
-                                <div className="flex items-center justify-end">
-                                    <button
-                                        type="submit"
-                                        disabled={isGenerating || !refinementRequest.trim()}
-                                        className="flex items-center justify-center px-4 py-2 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-500 transition-colors shadow-md disabled:bg-slate-600 disabled:cursor-not-allowed"
-                                    >
-                                        <SendIcon className="w-5 h-5 mr-2"/>
-                                        发送
-                                    </button>
-                                </div>
-                             </form>
 
                             <div className="p-4 bg-slate-900/50 rounded-lg space-y-3">
                                 <h4 className="text-sm font-medium text-slate-300">AI 叙事工具箱</h4>
