@@ -1,193 +1,77 @@
-import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique } from '../types';
-
-// Helper for streaming responses from our backend
-async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API Error: ${response.status} - ${errorText}`);
-    }
-
-    if (!response.body) {
-        throw new Error("Response body is empty.");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            if (buffer.trim().length > 0) {
-                 try { yield JSON.parse(buffer); } catch (e) { console.error("Error parsing final chunk:", buffer, e); }
-            }
-            break;
-        }
-        
-        buffer += decoder.decode(value, { stream: true });
-        
-        // Process line by line for line-delimited JSON
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep the last, potentially incomplete line
-
-        for (const line of lines) {
-            if (line.trim()) {
-                 try { yield JSON.parse(line); } catch (e) { console.error("Error parsing stream line:", line, e); }
-            }
-        }
-    }
+// Fix: Provide full content for geminiService.ts to implement listModels and resolve import errors.
+interface ListModelsParams {
+  apiBaseUrl: string;
+  apiKey: string;
+  signal?: AbortSignal; // Add signal for cancellation
 }
 
-// Helper for non-streaming JSON responses from our backend
-async function postFetch<T>(endpoint: string, body: any): Promise<T> {
-     const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+export async function listModels({ apiBaseUrl, apiKey, signal }: ListModelsParams): Promise<string[]> {
+  let response: Response;
+  try {
+    // Ensure the URL is clean and doesn't have trailing slashes before appending the path
+    const cleanedUrl = apiBaseUrl.replace(/\/$/, "");
+    response = await fetch(`${cleanedUrl}/models`, {
+      signal, // Pass the signal to fetch
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json', // Explicitly request a JSON response
+      },
     });
-    if (!response.ok) {
-        const errorText = await response.text();
-        // Try to parse error JSON from backend
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.log("Fetch aborted for listModels");
+      throw new Error("模型获取任务已取消。");
+    }
+    console.error("Network error while fetching models:", error);
+    throw new Error(`网络错误: 无法连接到API服务器 ${apiBaseUrl}。请检查URL和您的网络连接。`);
+  }
+
+  const contentType = response.headers.get("content-type");
+
+  // Handle non-successful responses (like 401, 404, 500)
+  if (!response.ok) {
+    let errorText = `HTTP 错误! 状态: ${response.status} ${response.statusText}`;
+    // If the server was kind enough to send a JSON error, use it.
+    if (contentType && contentType.includes("application/json")) {
         try {
-            const errorJson = JSON.parse(errorText);
-            throw new Error(errorJson.error || `API Error: ${response.status}`);
-        } catch {
-            throw new Error(`API Error: ${response.status} - ${errorText}`);
+            const errorData = await response.json();
+            errorText = errorData.error?.message || JSON.stringify(errorData);
+        } catch (jsonError) {
+            // The server said it's JSON but it wasn't. Fallback to text.
+            errorText = "服务器返回了一个无法解析的错误响应。";
         }
+    } else {
+        // This is the most likely case for the user's error: getting an HTML page.
+        errorText = "收到了意外的HTML响应。请检查您的API地址是否正确，并确保它指向一个有效的API端点（例如 https://.../v1），而不是一个网页。";
     }
-    return response.json();
+    throw new Error(errorText);
+  }
+
+  // Handle successful responses that are not JSON
+  if (!contentType || !contentType.includes("application/json")) {
+      throw new Error(`收到了意外的响应类型: ${contentType}。API应该返回JSON格式的数据。`);
+  }
+
+  try {
+    const data = await response.json();
+    // Standard OpenAI format
+    if (data.data && Array.isArray(data.data)) {
+      return data.data.map((model: any) => model.id).sort();
+    }
+    // Fallback for other formats (like Ollama)
+    if (data.models && Array.isArray(data.models)) {
+        return data.models.map((model: any) => model.name).sort();
+    }
+    if (Array.isArray(data)) {
+        return data.map((model: any) => model.id || model.name).sort();
+    }
+    
+    throw new Error("来自API的JSON格式不符合预期。");
+  } catch (error) {
+    if (error.name === 'AbortError') {
+        throw new Error("模型获取任务已取消。");
+    }
+    console.error("Failed to parse JSON response:", error);
+    throw new Error("无法解析来自API服务器的JSON响应。数据可能已损坏。");
+  }
 }
-
-// FIX: Removed apiMode from the options type as it's no longer needed.
-export const listModels = async (options: { apiBaseUrl: string, apiKey: string }): Promise<string[]> => {
-    return postFetch<string[]>('/api', {
-        action: 'listModels',
-        payload: { options }
-    });
-}
-
-// NON-STREAMING: The initial research step before planning.
-export const performSearch = (storyCore: string, options: StoryOptions): Promise<{ text: string; citations: Citation[] }> => {
-    return postFetch<{ text: string; citations: Citation[] }>('/api', {
-        action: 'performSearch',
-        payload: { storyCore, options }
-    });
-};
-
-// NON-STREAMING: More reliable for a critical one-off generation.
-export const generateStoryOutline = (storyCore: string, options: StoryOptions): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'generateStoryOutline',
-        payload: { storyCore, options }
-    });
-};
-
-export const generateChapterStream = (
-    outline: StoryOutline,
-    historyChapters: GeneratedChapter[],
-    options: StoryOptions,
-    detailedChapterOutline: DetailedOutlineAnalysis
-) => {
-    return streamFetch('/api', {
-        action: 'generateChapter',
-        payload: { outline, historyChapters, options, detailedChapterOutline }
-    });
-};
-
-// NON-STREAMING: This is a quick action, streaming is overkill.
-export const generateChapterTitles = async (
-    outline: StoryOutline,
-    chapters: GeneratedChapter[],
-    options: StoryOptions
-): Promise<string[]> => {
-    const { titles } = await postFetch<{ titles: string[] }>('/api', {
-        action: 'generateChapterTitles',
-        payload: { outline, chapters, options }
-    });
-    return titles;
-};
-
-// NEW ARCHITECTURE: A single, non-streaming function for one iteration.
-export const generateSingleOutlineIteration = async (
-    outline: StoryOutline,
-    chapters: GeneratedChapter[],
-    chapterTitle: string,
-    options: StoryOptions,
-    previousAttempt: { outline: DetailedOutlineAnalysis, critique: OutlineCritique } | null,
-    userInput: string,
-): Promise<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }> => {
-    return postFetch<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }>('/api', {
-        action: 'generateSingleOutlineIteration',
-        payload: { outline, chapters, chapterTitle, options, previousAttempt, userInput }
-    });
-};
-
-
-export const editChapterText = async (
-    originalText: string,
-    instruction: string,
-    options: StoryOptions
-): Promise<{ text: string }> => {
-     return postFetch<{ text: string }>('/api', {
-        action: 'editChapterText',
-        payload: { originalText, instruction, options }
-    });
-};
-
-export const generateCharacterInteractionStream = (
-    char1: CharacterProfile,
-    char2: CharacterProfile,
-    outline: StoryOutline,
-    options: StoryOptions
-) => {
-    return streamFetch('/api', {
-        action: 'generateCharacterInteraction',
-        payload: { char1, char2, outline, options }
-    });
-};
-
-export const generateNewCharacterProfile = async (
-    storyOutline: StoryOutline,
-    characterPrompt: string,
-    options: StoryOptions
-): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'generateNewCharacterProfile',
-        payload: { storyOutline, characterPrompt, options }
-    });
-};
-
-// --- NEW CREATIVE TOOL SERVICES ---
-
-export const generateWorldbookSuggestions = async (storyOutline: StoryOutline, options: StoryOptions): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'getWorldbookSuggestions',
-        payload: { storyOutline, options }
-    });
-};
-
-export const generateCharacterArcSuggestions = async (character: CharacterProfile, storyOutline: StoryOutline, options: StoryOptions): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'getCharacterArcSuggestions',
-        payload: { character, storyOutline, options }
-    });
-};
-
-export const generateNarrativeToolboxSuggestions = async (
-    tool: 'iceberg' | 'conflict',
-    detailedOutline: DetailedOutlineAnalysis,
-    storyOutline: StoryOutline,
-    options: StoryOptions
-): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'getNarrativeToolboxSuggestions',
-        payload: { tool, detailedOutline, storyOutline, options }
-    });
-};

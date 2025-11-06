@@ -1,14 +1,16 @@
-import React, { FC, useState, useEffect } from 'react';
-import type { StoryOptions, AuthorStyle } from '../types';
+import React, { FC, useState, useEffect, useContext, useRef } from 'react';
+import type { StoryOptions, AuthorStyle, LogEntry } from '../types';
 import { listModels } from '../services/geminiService';
 import LoadingSpinner from './icons/LoadingSpinner';
 import { DEFAULT_STORY_OPTIONS } from '../App';
+import { AITaskContext } from '../contexts/AITaskContext';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   options: StoryOptions;
   setOptions: React.Dispatch<React.SetStateAction<StoryOptions>>;
+  addLog: (message: string, type: LogEntry['type']) => void;
 }
 
 const authorStyles: { name: AuthorStyle, description: string }[] = [
@@ -29,12 +31,15 @@ const authorStyles: { name: AuthorStyle, description: string }[] = [
     { name: '方千金', description: '代表作《天才医生》。专业领域碾压，生理反应描写，快节奏打脸。' },
 ];
 
-const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOptions }) => {
+const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOptions, addLog }) => {
   const [localOptions, setLocalOptions] = useState<StoryOptions>(options);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [connectionSuccess, setConnectionSuccess] = useState(false);
   
+  const { isPaused, registerController, unregisterController } = useContext(AITaskContext);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
     // Sync local state if parent options change while modal is open
     setLocalOptions(options);
@@ -51,7 +56,19 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
     handleLocalOptionChange('forbiddenWords', words);
   };
 
+  const handleCancelFetch = () => {
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+    }
+  };
+
   const handleFetchModels = async () => {
+    if (isPaused) {
+        addLog("AI任务已暂停，无法开始新任务。", 'warning');
+        setModelError("AI任务已全局暂停，请先恢复。");
+        return;
+    }
+
     if (!localOptions.apiBaseUrl || !localOptions.apiKey) {
         setModelError("API地址和密钥为必填项。");
         return;
@@ -61,10 +78,16 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
     setModelError(null);
     setConnectionSuccess(false);
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    registerController(controller);
+    addLog("开始连接API并获取模型列表...", 'info');
+
     try {
         const models = await listModels({
             apiBaseUrl: localOptions.apiBaseUrl,
             apiKey: localOptions.apiKey,
+            signal: controller.signal,
         });
 
         // Filter for models that are likely for chat/completions
@@ -97,11 +120,20 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
             }
         }
         setConnectionSuccess(true);
+        addLog(`成功获取 ${chatModels.length} 个模型。`, 'success');
         setTimeout(() => setConnectionSuccess(false), 3000);
     } catch(e: any) {
-        setModelError(`连接失败: ${e.message}`);
+        if (e.name === 'AbortError') {
+            setModelError("任务已取消。");
+            addLog("获取模型任务被用户取消。", 'warning');
+        } else {
+            setModelError(`连接失败: ${e.message}`);
+            addLog(`获取模型失败: ${e.message}`, 'error');
+        }
     } finally {
         setIsLoadingModels(false);
+        unregisterController(controller);
+        abortControllerRef.current = null;
     }
   }
 
@@ -127,7 +159,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
   return (
     <div 
         className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 transition-opacity"
-        onClick={handleSave}
+        onClick={onClose}
     >
       <div 
         className="glass-card w-full max-w-2xl rounded-2xl p-6 shadow-2xl m-4 overflow-y-auto max-h-[90vh]"
@@ -136,7 +168,7 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-slate-100">系统设置</h2>
           <button 
-            onClick={handleSave}
+            onClick={onClose}
             className="p-2 rounded-full hover:bg-slate-700/50 transition-colors"
             aria-label="Close settings"
           >
@@ -185,15 +217,25 @@ const SettingsModal: FC<SettingsModalProps> = ({ isOpen, onClose, options, setOp
                                 className="w-full p-3 bg-slate-800/70 border border-slate-600 rounded-lg text-slate-200 focus:ring-2 focus:ring-teal-500 transition"
                             />
                         </div>
-                        <div>
+                        <div className="flex items-center gap-x-2">
                             <button
                               onClick={handleFetchModels}
                               disabled={isLoadingModels}
-                              className="w-full flex items-center justify-center px-4 py-2 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-500 transition-colors shadow-md disabled:bg-slate-600 disabled:cursor-not-allowed"
+                              className="flex-grow flex items-center justify-center px-4 py-2 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-500 transition-colors shadow-md disabled:bg-slate-600 disabled:cursor-not-allowed"
                             >
-                              {isLoadingModels ? <LoadingSpinner className="w-5 h-5 mr-2" /> : null}
+                              <LoadingSpinner className={`w-5 h-5 mr-2 ${isLoadingModels ? 'block' : 'hidden'}`} />
                               {isLoadingModels ? '连接中...' : '连接 & 获取可用模型'}
                             </button>
+                            {isLoadingModels && (
+                                <button
+                                    onClick={handleCancelFetch}
+                                    className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-500 transition-colors shadow-md flex-shrink-0"
+                                >
+                                    取消
+                                </button>
+                            )}
+                        </div>
+                        <div>
                             {modelError && <p className="text-xs text-red-400 mt-2">{modelError}</p>}
                             {connectionSuccess && <p className="text-xs text-green-400 mt-2">连接成功！已获取 {localOptions.availableModels.length} 个模型。</p>}
                         </div>
