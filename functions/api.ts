@@ -3,8 +3,7 @@ import {
   getStoryOutlinePrompts,
   getChapterPrompts,
   getChapterTitlesPrompts,
-  getDetailedOutlinePrompts,
-  getRefineDetailedOutlinePrompts,
+  getSingleOutlineIterationPrompts, // REFACTORED
   getEditChapterTextPrompts,
   getCharacterInteractionPrompts,
   getNewCharacterProfilePrompts,
@@ -139,9 +138,9 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'performSearch': case 'generateStoryOutline': case 'generateChapterTitles': 
             case 'editChapterText': case 'generateNewCharacterProfile':
             case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions': case 'getNarrativeToolboxSuggestions':
+            case 'generateSingleOutlineIteration': // NEW non-streaming action
                 isStreaming = false; break;
-            case 'generateChapter': case 'generateCharacterInteraction': case 'generateDetailedOutline': 
-            case 'refineDetailedOutline':
+            case 'generateChapter': case 'generateCharacterInteraction':
                 isStreaming = true; break;
             default: throw new Error(`Unknown action: ${action}`);
         }
@@ -151,8 +150,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'generateStoryOutline': model = options.planningModel; prompt = getStoryOutlinePrompts(restPayload.storyCore, options); break;
             case 'generateChapter': model = options.writingModel; prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline); break;
             case 'generateChapterTitles': model = options.planningModel; prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options); break;
-            case 'generateDetailedOutline': model = options.planningModel; prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, restPayload.userInput, options, restPayload.iterationConfig); break;
-            case 'refineDetailedOutline': model = options.planningModel; prompt = getRefineDetailedOutlinePrompts(restPayload.originalOutlineJson, restPayload.refinementRequest, restPayload.chapterTitle, restPayload.storyOutline, options, restPayload.iterationConfig); break;
+            case 'generateSingleOutlineIteration': model = options.planningModel; prompt = getSingleOutlineIterationPrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, options, restPayload.previousAttempt, restPayload.userInput); break;
             case 'editChapterText': model = options.writingModel; prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options); break;
             case 'generateCharacterInteraction': model = options.planningModel; prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options); break;
             case 'generateNewCharacterProfile': model = options.planningModel; prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options); break;
@@ -164,77 +162,17 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         if (!model) throw new Error(`No model selected for action: ${action}. Please check your settings.`);
 
         if (isStreaming) {
-            if (action === 'generateDetailedOutline' || action === 'refineDetailedOutline') {
-                 const { readable, writable } = new TransformStream();
-                 const writer = writable.getWriter();
-                 const encoder = new TextEncoder();
-
-                 (async () => {
-                    let currentOutlineJson = (action === 'refineDetailedOutline') ? restPayload.originalOutlineJson : "{}";
-                    let optimizationHistory = [];
-                    
-                    try {
-                        for (let i = 1; i <= restPayload.iterationConfig.maxIterations; i++) {
-                            const progress: OutlineGenerationProgress = {
-                                status: 'refining', version: i, maxVersions: restPayload.iterationConfig.maxIterations,
-                                score: optimizationHistory[optimizationHistory.length - 1]?.critique.overallScore || 0,
-                                message: `v${i}: 叙事架构师正在构思新稿...`
-                            };
-                            await writer.write(encoder.encode(JSON.stringify({ progress }) + '\n'));
-                            
-                            let iterationPrompt;
-                             if (i === 1) {
-                                // For the very first iteration of either action, use the 'prompt' variable generated outside the loop.
-                                // This correctly handles both a fresh generation and a user-initiated refinement.
-                                iterationPrompt = prompt;
-                            } else {
-                                // For all subsequent iterations, it's always an auto-refinement based on the last critique.
-                                const refinementMessage = `这是第${i}轮优化。请根据上一轮的优化建议进行修改。`;
-                                iterationPrompt = getRefineDetailedOutlinePrompts(
-                                    currentOutlineJson,
-                                    refinementMessage,
-                                    restPayload.chapterTitle,
-                                    restPayload.storyOutline,
-                                    options,
-                                    restPayload.iterationConfig
-                                );
-                            }
-                            
-                            const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, iterationPrompt, options);
-                            const parsedJson = JSON.parse(extractJsonFromText(resultText));
-                            
-                            currentOutlineJson = JSON.stringify({ plotPoints: parsedJson.plotPoints, nextChapterPreview: parsedJson.nextChapterPreview });
-                            optimizationHistory = parsedJson.optimizationHistory;
-                            const latestCritique = parsedJson.optimizationHistory[parsedJson.optimizationHistory.length - 1]?.critique;
-
-                            const progressCritique: OutlineGenerationProgress = {
-                                status: 'critiquing', version: i, maxVersions: restPayload.iterationConfig.maxIterations,
-                                score: latestCritique?.overallScore || 0,
-                                message: `v${i} 评估完成 - 分数: ${latestCritique?.overallScore.toFixed(1)}`
-                            };
-                            await writer.write(encoder.encode(JSON.stringify({ progress: progressCritique }) + '\n'));
-
-                            // PER-ITERATION SAVE: Send the full result back to the client.
-                            await writer.write(encoder.encode(JSON.stringify({ result: `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(parsedJson, null, 2)}\n[END_DETAILED_OUTLINE_JSON]` }) + '\n'));
-
-                            if (latestCritique && latestCritique.overallScore >= restPayload.iterationConfig.scoreThreshold) {
-                                break; // Success
-                            }
-                        }
-                    } catch(e: any) {
-                        await writer.write(encoder.encode(JSON.stringify({ error: e.message }) + '\n'));
-                    } finally {
-                        await writer.close();
-                    }
-                 })();
-                 return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
-            }
-
             const { readable, writable } = new TransformStream();
             streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt, options, writable);
             return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
         } else {
             const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt, options);
+            
+            if (action === 'generateSingleOutlineIteration') {
+                const resultJson = JSON.parse(extractJsonFromText(resultText));
+                return new Response(JSON.stringify(resultJson), { headers: { 'Content-Type': 'application/json' }});
+            }
+
             let responseBody;
             const jsonText = extractJsonFromText(resultText);
             switch (action) {

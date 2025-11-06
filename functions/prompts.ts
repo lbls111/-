@@ -1,6 +1,4 @@
-// FIX: Replaced `createPrompt` overloads with a single function signature using a boolean parameter.
-// This resolves TypeScript errors in api.ts related to union type inference by ensuring a consistent return type.
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, WorldCategory } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, WorldCategory, FinalDetailedOutline, OutlineCritique } from '../types';
 
 // =================================================================
 // == UTILITY FUNCTIONS
@@ -213,11 +211,11 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
     return createPrompt(system, user);
 }
 
-const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v2.0 - 爽感增强版)
+const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v2.1 - 单轮迭代模式)
 
 你是一个由多个专家组成的AI写作顾问团队，融合了**首席编剧**的创造力、**网文分析师**的市场洞察力、以及一个**极其挑剔的第三方评论员**。你的存在是为了打破常规，创造出乎意料但又逻辑自洽的叙事体验。
 
-你的核心任务是为一个指定的章节标题，通过一个**【创作-评估-优化】**的迭代循环，生成一份极其详尽、深刻、专业的章节细纲。你的最终目标是创造一种**既有文学深度，又能提供极致爽感**的新型网络小说叙事。
+你的核心任务是**执行单次【创作-评估】迭代**。你将接收一个章节标题和可选的草稿/优化指令，然后生成一个**新版本**的细纲，并**对其进行一次严格的评估**。
 
 ### 五大创作法则（不可违背的铁律）
 
@@ -256,93 +254,85 @@ const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v2
 
 ### 工作流程与输出格式
 
-1.  **[编剧创作]**: 基于上述法则，创作第一版细纲。
-2.  **[评论员评估]**: 独立评论员对草稿进行严格评分（目标分数: ${'${iterationConfig.scoreThreshold}'}/10.0），评估维度必须包含“爽感实现度”。
-3.  **[分析师优化]**: 若未达标，分析师提出具体优化建议。
-4.  **[迭代]**: 重复以上步骤，直至达标或达到最大迭代次数（${'${iterationConfig.maxIterations}'}次）。
-5.  **[整合输出]**: 输出包含完整迭代历史的**单一JSON对象**。不要添加任何额外文本。
+1.  **[编剧创作]**: 基于输入信息（故事背景、章节标题、可选的上一版草稿和优化指令），创作一个新版本的细纲。
+2.  **[评论员评估]**: 独立评论员对新版细纲进行严格评分，并提供优化建议。
+3.  **[整合输出]**: 将新版细纲和对其的评估报告整合到一个**单一JSON对象**中。不要添加任何额外文本。
 
 **输出JSON结构 (强制要求):**
 \`\`\`json
 {
-  "finalVersion": <number>,
-  "optimizationHistory": [
-    {
-      "version": <number>,
-      "critique": {
-        "overallScore": <number>,
-        "scoringBreakdown": [ { "dimension": "<string>", "score": <number>, "reason": "<string>" } ],
-        "improvementSuggestions": [ { "area": "<string>", "suggestion": "<string>" } ]
-      },
-      "outline": {
-        "plotPoints": [ { "summary": "此版本剧情点的摘要" } ],
-        "nextChapterPreview": { "nextOutlineIdea": "此版本下一章的构想" }
+  "critique": {
+    "overallScore": <number>,
+    "scoringBreakdown": [ { "dimension": "<string>", "score": <number>, "reason": "<string>" } ],
+    "improvementSuggestions": [ { "area": "<string>", "suggestion": "<string>" } ]
+  },
+  "outline": {
+    "plotPoints": [
+      {
+        "summary": "对这个剧情点的简洁概括。",
+        "emotionalCurve": "描述这个剧情点在读者情绪曲线中的作用（例如：建立期待、紧张升级、情感爆发、短暂缓和）。",
+        "maslowsNeeds": "分析这个剧情点满足了角色哪个层次的需求（生理、安全、归属、尊重、自我实现），以此强化动机。",
+        "webNovelElements": "明确指出这个剧情点包含了哪些核心网文要素（例如：扮猪吃虎、打脸、获得金手指、越级挑战、生死危机、揭露秘密）。",
+        "conflictSource": "明确冲突的来源（人与人、人与环境、人与内心）。",
+        "showDontTell": "提供具体的“展示而非讲述”的建议。即如何将抽象情感转化为具体行动或场景。",
+        "dialogueAndSubtext": "设计关键对话，并指出其“潜台词”（角色真实想表达但没说出口的意思）。",
+        "logicSolidification": "指出需要在这里埋下的伏笔，或需要回收的前文伏笔，以夯实逻辑。",
+        "emotionAndInteraction": "设计角色之间的关键互动，以最大化情感张力。",
+        "pacingControl": "关于这一段的叙事节奏建议（快速推进或慢速渲染）。"
       }
+    ],
+    "nextChapterPreview": {
+      "nextOutlineIdea": "为下一章的剧情走向提供一个或多个充满悬念的初步构想。",
+      "characterNeeds": "指出在本章结束后，主要角色的新需求或动机是什么，以驱动他们进入下一章。"
     }
-  ],
-  "plotPoints": [
-    {
-      "summary": "对这个剧情点的简洁概括。",
-      "emotionalCurve": "描述这个剧情点在读者情绪曲线中的作用（例如：建立期待、紧张升级、情感爆发、短暂缓和）。",
-      "maslowsNeeds": "分析这个剧情点满足了角色哪个层次的需求（生理、安全、归属、尊重、自我实现），以此强化动机。",
-      "webNovelElements": "明确指出这个剧情点包含了哪些核心网文要素（例如：扮猪吃虎、打脸、获得金手指、越级挑战、生死危机、揭露秘密）。",
-      "conflictSource": "明确冲突的来源（人与人、人与环境、人与内心）。",
-      "showDontTell": "提供具体的“展示而非讲述”的建议。即如何将抽象情感转化为具体行动或场景。",
-      "dialogueAndSubtext": "设计关键对话，并指出其“潜台词”（角色真实想表达但没说出口的意思）。",
-      "logicSolidification": "指出需要在这里埋下的伏笔，或需要回收的前文伏笔，以夯实逻辑。",
-      "emotionAndInteraction": "设计角色之间的关键互动，以最大化情感张力。",
-      "pacingControl": "关于这一段的叙事节奏建议（快速推进或慢速渲染）。"
-    }
-  ],
-  "nextChapterPreview": {
-    "nextOutlineIdea": "为下一章的剧情走向提供一个或多个充满悬念的初步构想。",
-    "characterNeeds": "指出在本章结束后，主要角色的新需求或动机是什么，以驱动他们进入下一章。"
   }
 }
 \`\`\`
 `;
 
-export const getDetailedOutlinePrompts = (outline: StoryOutline, chapters: GeneratedChapter[], chapterTitle: string, userInput: string, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }): { role: string; content: string; }[] => {
-    const system = DETAILED_OUTLINE_SYSTEM_PROMPT
-        .replace('${iterationConfig.scoreThreshold}', iterationConfig.scoreThreshold.toFixed(1))
-        .replace('${iterationConfig.maxIterations}', iterationConfig.maxIterations.toString());
-
-    const user = `### 故事信息
+export const getSingleOutlineIterationPrompts = (
+    outline: StoryOutline, 
+    chapters: GeneratedChapter[], 
+    chapterTitle: string, 
+    options: StoryOptions, 
+    previousAttempt: { outline: DetailedOutlineAnalysis; critique: OutlineCritique } | null,
+    userInput: string
+): { role: string; content: string; }[] => {
+    
+    let userContext = `### 故事信息
 *   **总大纲**: ${outline.plotSynopsis}
 *   **世界观**: ${stringifyWorldbook(outline.worldCategories)}
 *   **主要角色**: ${stringifyCharacters(outline.characters)}
 *   **已有章节梗概**: ${chapters.map((c, i) => `第${i+1}章: ${c.title}`).join('; ')}
 *   **当前章节标题**: **${chapterTitle}**
-*   **用户额外指令**: ${userInput || "无"}
+`;
+    
+    if (previousAttempt) {
+        userContext += `
+### 上一版草稿及评估
+这是上一轮尝试生成的草稿和评论员的优化建议。你需要在此基础上进行改进。
+*   **上一版草稿 (JSON)**:
+${JSON.stringify(previousAttempt.outline, null, 2)}
+*   **评论员优化建议**:
+${JSON.stringify(previousAttempt.critique.improvementSuggestions, null, 2)}
+`;
+    }
 
-### 任务
-请激活你的“颠覆性叙事架构师”人格，严格遵循五大创作法则，启动【创作-评估-优化】流程，为章节“${chapterTitle}”生成最终的细纲分析JSON。`;
+    if (userInput) {
+         userContext += `
+### 用户额外指令
+**${userInput}**
+`;
+    }
 
-    return createPrompt(system, user);
-}
+    const userTask = `### 任务
+请激活你的“颠覆性叙事架构师”人格，严格遵循五大创作法则，根据以上所有信息，为章节“${chapterTitle}”生成一个**新版本**的细纲，并对其进行一次独立的、全新的评估。将结果整合到指定的JSON结构中。`;
+    
+    const user = userContext + '\n' + userTask;
 
-export const getRefineDetailedOutlinePrompts = (originalOutlineJson: string, refinementRequest: string, chapterTitle: string, storyOutline: StoryOutline, options: StoryOptions, iterationConfig: { maxIterations: number; scoreThreshold: number; }): { role: string; content: string; }[] => {
-    const system = DETAILED_OUTLINE_SYSTEM_PROMPT
-        .replace('${iterationConfig.scoreThreshold}', iterationConfig.scoreThreshold.toFixed(1))
-        .replace('${iterationConfig.maxIterations}', iterationConfig.maxIterations.toString());
-        
-    const user = `### 任务：优化细纲
-*   **章节标题**: **${chapterTitle}**
-*   **总大纲**: ${storyOutline.plotSynopsis}
+    return createPrompt(DETAILED_OUTLINE_SYSTEM_PROMPT, user);
+};
 
-### 原始细纲
-这是需要被优化的版本：
-\`\`\`json
-${originalOutlineJson}
-\`\`\`
-
-### **核心优化指令**
-**${refinementRequest}**
-
-请激活你的“颠覆性叙事架构师”人格，严格遵循五大创作法则，根据我的核心优化指令对原始细纲进行修改，并启动新一轮的【创作-评估-优化】流程，生成最终的优化版细纲JSON。`;
-
-    return createPrompt(system, user);
-}
 
 export const getChapterPrompts = (outline: StoryOutline, historyChapters: GeneratedChapter[], options: StoryOptions, detailedChapterOutline: DetailedOutlineAnalysis): { role: string; content: string; }[] => {
     const system = `${getAuthorStyleInstructions(options.authorStyle)}
@@ -531,47 +521,38 @@ ${JSON.stringify(character, null, 2)}
 
 export const getNarrativeToolboxPrompts = (tool: 'iceberg' | 'conflict', detailedOutline: DetailedOutlineAnalysis, storyOutline: StoryOutline, options: StoryOptions): { role: string; content: string; }[] => {
     const system = `你是一位精通高级叙事技巧的“剧本医生”。
-你的任务是根据用户的具体要求，为一段已有的章节细纲提供战术级别的、可直接应用的写作技巧建议。
-你必须具体、精确，直接给出可以写入正文的场景或行为设计。`;
-    
-    let user = `### 故事背景
-*   **总大纲**: ${storyOutline.plotSynopsis}
+你的任务是根据用户的请求，为一段已有的章节细纲提供战术级别的、可操作的优化建议。
+你的建议必须非常具体，能够直接被作者采纳并写入故事。`;
+
+    const toolPrompts = {
+        'iceberg': `### 工具：建议信息载体 (冰山法则)
+为细纲中的至少两个关键情节点，设计具体的“非语言载体”来传递隐藏信息。
+**格式要求**:
+*   **情节点**: [引用或概括一个具体的剧情点]
+*   **水面上的行为 (载体)**: [描述一个具体的、可观察的角色微动作或道具异常反应]
+*   **水面下的信息 (暗示)**: [清晰地说明这个行为暗示了什么深层信息，如角色的真实意图、隐藏的情绪、或一个未被揭露的秘密]`,
+        
+        'conflict': `### 工具：构思规则冲突
+基于故事的世界观，设计一个由“世界观规则的异常失效”引发的关键冲突。
+这个冲突必须：
+1.  **自然暴露深层逻辑**：通过规则的“失效”或“反常”，揭示出世界运行的一个更深层次的、未被提及的逻辑或秘密。
+2.  **与主角目标相关**：这个冲突必须直接影响主角的某个核心目标，成为他必须解决的障碍或意想不到的机遇。`
+    };
+
+    const user = `### 故事背景
+*   **剧情总纲**: ${storyOutline.plotSynopsis}
 *   **世界观**: ${stringifyWorldbook(storyOutline.worldCategories)}
-*   **主要角色**: ${stringifyCharacters(storyOutline.characters)}
 
 ### 当前章节细纲
 \`\`\`json
 ${JSON.stringify(detailedOutline, null, 2)}
 \`\`\`
 
----
+### 你的任务
+请使用以下工具对上述细纲进行分析，并提供具体的创意建议。
+
+${toolPrompts[tool]}
 `;
-
-    if (tool === 'iceberg') {
-        user += `### 任务：设计“非语言信息载体” (冰山法则)
-
-请为上述细纲中的 **至少两个关键情节节点** 设计具体的“非语言载体”来传递核心信息，取代直白的对话或旁白。
-
-你的建议需要遵循以下格式：
-*   **情节节点**: [引用或概括一个具体的剧情点]
-*   **需要传递的隐性信息**: [明确指出需要“藏”起来的信息]
-*   **设计的非语言载体**: [描述一个具体的、可被观察到的行为、道具异常或环境细节]
-    *   **示例1 (角色微动作)**: 通过角色在对话时“无意识地反复摩挲一枚旧戒指”的动作，来暗示他正在撒谎，并且这个谎言与戒指的来源有关。
-    *   **示例2 (道具异常反应)**: 当主角尝试使用他的“火焰护符”时，护符非但没有发光，反而变得冰冷。这暗示了此地的物理/社会规则与外界完全不同，或者护符本身有问题。
-`;
-    } else if (tool === 'conflict') {
-        user += `### 任务：设计“世界观规则失效型”冲突
-
-请基于当前的世界观和章节细纲，设计一个由**“某个核心世界观规则的异常失效”**所引发的关键冲突。
-
-这个冲突必须满足以下条件：
-1.  **规则明确**: 明确指出是哪一条已知的世界观规则失效了。
-2.  **冲突过程**: 描述规则失效是如何直接导致一个具体的、危及主角的冲突或困境的。
-3.  **暴露深层逻辑**: 这个“异常失效”必须成为一个线索，能够揭示或暗示世界运行的一个更深层次的、未被发现的逻辑或秘密。
-4.  **关联主角目标**: 解决这个冲突的过程，必须与主角的某个核心目标（短期或长期）直接相关。
-
-请详细描述你设计的这个冲突场景。`;
-    }
-
+    
     return createPrompt(system, user);
-}
+};

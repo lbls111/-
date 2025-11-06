@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique } from '../types';
 
 // Helper for streaming responses from our backend
 async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
@@ -114,35 +114,21 @@ export const generateChapterTitles = async (
     return titles;
 };
 
-// STREAMING: The iterative process is now streamed to the frontend for progress display and reliability.
-export const generateDetailedOutlineStream = (
+// NEW ARCHITECTURE: A single, non-streaming function for one iteration.
+export const generateSingleOutlineIteration = async (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     chapterTitle: string,
+    options: StoryOptions,
+    previousAttempt: { outline: DetailedOutlineAnalysis, critique: OutlineCritique } | null,
     userInput: string,
-    options: StoryOptions,
-    iterationConfig: { maxIterations: number; scoreThreshold: number; }
-) => {
-     return streamFetch('/api', {
-        action: 'generateDetailedOutline',
-        payload: { outline, chapters, chapterTitle, userInput, options, iterationConfig }
-     });
-}
+): Promise<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }> => {
+    return postFetch<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }>('/api', {
+        action: 'generateSingleOutlineIteration',
+        payload: { outline, chapters, chapterTitle, options, previousAttempt, userInput }
+    });
+};
 
-// STREAMING: Refinement also becomes a streaming action for consistency.
-export const refineDetailedOutlineStream = (
-    originalOutlineJson: string,
-    refinementRequest: string,
-    chapterTitle: string,
-    storyOutline: StoryOutline,
-    options: StoryOptions,
-    iterationConfig: { maxIterations: number; scoreThreshold: number; }
-) => {
-     return streamFetch('/api', {
-        action: 'refineDetailedOutline',
-        payload: { originalOutlineJson, refinementRequest, chapterTitle, storyOutline, options, iterationConfig }
-     });
-}
 
 export const editChapterText = async (
     originalText: string,
