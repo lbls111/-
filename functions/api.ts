@@ -1,9 +1,9 @@
 import {
   getSearchPrompts,
-  getStoryOutlinePrompts,
+  getStoryOutlinePrompts, // RE-INTRODUCED
   getChapterPrompts,
   getChapterTitlesPrompts,
-  getSingleOutlineIterationPrompts, // REFACTORED
+  getSingleOutlineIterationPrompts,
   getEditChapterTextPrompts,
   getCharacterInteractionPrompts,
   getNewCharacterProfilePrompts,
@@ -12,7 +12,8 @@ import {
   getNarrativeToolboxPrompts,
 } from './prompts';
 
-import type { StoryOptions, Citation, OutlineGenerationProgress } from '../types';
+// FIX: Removed unused import for OutlineGenerationProgress
+import type { StoryOptions, Citation } from '../types';
 
 interface PagesFunctionContext {
   request: Request;
@@ -20,29 +21,66 @@ interface PagesFunctionContext {
 
 // A more robust helper to extract a JSON object or array from a string.
 const extractJsonFromText = (text: string): string => {
+    // 1. First, try to find a JSON object wrapped in markdown code blocks.
     const markdownMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (markdownMatch && markdownMatch[1]) {
-        try { JSON.parse(markdownMatch[1]); return markdownMatch[1].trim(); } catch (e) { /* Fall through */ }
+        try { 
+            JSON.parse(markdownMatch[1]); 
+            return markdownMatch[1].trim(); 
+        } catch (e) { 
+            // The content inside the markdown block is not valid JSON, fall through to the next method.
+            console.warn("Markdown block found, but content was not valid JSON. Attempting other extraction methods.");
+        }
     }
+
+    // 2. If no valid markdown block, find the first occurrence of '{' or '['.
     let startIndex = -1;
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
-    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) { startIndex = firstBrace; } 
-    else if (firstBracket !== -1) { startIndex = firstBracket; }
-    if (startIndex === -1) { return text; }
+
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        startIndex = firstBrace;
+    } else if (firstBracket !== -1) {
+        startIndex = firstBracket;
+    }
+
+    // If no JSON start character is found, return the original text, it might be a plain string response.
+    if (startIndex === -1) {
+        return text;
+    }
+
+    // 3. From the start index, find the matching closing bracket.
     const startChar = text[startIndex];
     const endChar = startChar === '{' ? '}' : ']';
+    
     let openCount = 0;
     for (let i = startIndex; i < text.length; i++) {
-        if (text[i] === startChar) { openCount++; } 
-        else if (text[i] === endChar) { openCount--; }
+        if (text[i] === startChar) {
+            openCount++;
+        } else if (text[i] === endChar) {
+            openCount--;
+        }
+
         if (openCount === 0) {
             const potentialJson = text.substring(startIndex, i + 1);
-            try { JSON.parse(potentialJson); return potentialJson; } catch (e) { break; }
+            try {
+                // Final validation: does it parse?
+                JSON.parse(potentialJson);
+                return potentialJson;
+            } catch (e) {
+                // This substring is not valid JSON, which is strange.
+                // It might be a false positive. We break and return the original text below.
+                console.error("Found matching brackets, but content was not valid JSON.", potentialJson);
+                break; 
+            }
         }
     }
+    
+    // 4. If all else fails, return the original text for the caller to handle.
+    console.warn("Could not extract a valid JSON object. Returning raw text.");
     return text;
 };
+
 
 // --- Custom OpenAI-Compatible API Helpers ---
 
@@ -138,7 +176,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'performSearch': case 'generateStoryOutline': case 'generateChapterTitles': 
             case 'editChapterText': case 'generateNewCharacterProfile':
             case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions': case 'getNarrativeToolboxSuggestions':
-            case 'generateSingleOutlineIteration': // NEW non-streaming action
+            case 'generateSingleOutlineIteration':
                 isStreaming = false; break;
             case 'generateChapter': case 'generateCharacterInteraction':
                 isStreaming = true; break;
@@ -147,7 +185,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
 
         switch (action) {
             case 'performSearch': model = options.searchModel; prompt = getSearchPrompts(restPayload.storyCore, options); break;
-            case 'generateStoryOutline': model = options.planningModel; prompt = getStoryOutlinePrompts(restPayload.storyCore, options); break;
+            case 'generateStoryOutline': model = options.planningModel; prompt = getStoryOutlinePrompts(restPayload.storyCore, restPayload.researchText, options); break;
             case 'generateChapter': model = options.writingModel; prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline); break;
             case 'generateChapterTitles': model = options.planningModel; prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options); break;
             case 'generateSingleOutlineIteration': model = options.planningModel; prompt = getSingleOutlineIterationPrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, options, restPayload.previousAttempt, restPayload.userInput); break;
@@ -170,41 +208,8 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             let responseBody;
 
             switch (action) {
-                case 'generateStoryOutline': {
-                    const startMarker = '[START_OUTLINE_JSON]';
-                    const endMarker = '[END_OUTLINE_JSON]';
-                    const startMarkerIndex = resultText.indexOf(startMarker);
-
-                    if (startMarkerIndex === -1) {
-                        // Fallback: Model might have ignored instructions and sent only JSON.
-                        const extractedJson = extractJsonFromText(resultText);
-                        try {
-                            const parsedJson = JSON.parse(extractedJson); // Validate
-                            const cleanJsonString = JSON.stringify(parsedJson, null, 2);
-                            responseBody = { text: `${startMarker}\n${cleanJsonString}\n${endMarker}` };
-                        } catch (e) {
-                            console.error("Raw failing output for outline:", resultText);
-                            throw new Error(`模型输出严重格式错误：未能找到预期的 '${startMarker}' 标记，且内容也不是有效的JSON。`);
-                        }
-                    } else {
-                        // Standard case: Found the marker.
-                        const thoughtProcess = resultText.substring(0, startMarkerIndex);
-                        const jsonContainerText = resultText.substring(startMarkerIndex);
-                        const extractedJson = extractJsonFromText(jsonContainerText);
-                        try {
-                            const parsedJson = JSON.parse(extractedJson); // Validate
-                            const cleanJsonString = JSON.stringify(parsedJson, null, 2);
-                            responseBody = { text: `${thoughtProcess}${startMarker}\n${cleanJsonString}\n${endMarker}` };
-                        } catch (e: any) {
-                            console.error("Raw failing output for outline:", resultText);
-                            throw new Error(`解析创作大纲失败：模型返回的JSON结构无效。错误: ${e.message}`);
-                        }
-                    }
-                    break;
-                }
                 case 'generateSingleOutlineIteration': {
                     const jsonText = extractJsonFromText(resultText);
-                    // This action must return a valid JSON object directly
                     const resultJson = JSON.parse(jsonText);
                     return new Response(JSON.stringify(resultJson), { headers: { 'Content-Type': 'application/json' } });
                 }
@@ -215,19 +220,14 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                 }
                 case 'generateNewCharacterProfile': {
                     const jsonText = extractJsonFromText(resultText);
-                    try {
-                        // Validate JSON before sending to frontend
-                        JSON.parse(jsonText);
-                        responseBody = { text: jsonText };
-                    } catch (e) {
-                        throw new Error('模型返回了无效的角色档案JSON。');
-                    }
+                    JSON.parse(jsonText); // Validation
+                    responseBody = { text: jsonText };
                     break;
                 }
                 case 'performSearch':
-                    responseBody = { text: resultText, citations: [] }; // No citations in custom mode
+                    responseBody = { text: resultText, citations: [] };
                     break;
-                // These actions expect raw text/markdown, so just pass through
+                case 'generateStoryOutline': // This action returns text that contains JSON
                 case 'editChapterText':
                 case 'getWorldbookSuggestions':
                 case 'getCharacterArcSuggestions':
@@ -235,7 +235,6 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                     responseBody = { text: resultText };
                     break;
                 default:
-                     // A safe fallback for any other non-streaming action
                     responseBody = { text: resultText };
             }
             return new Response(JSON.stringify(responseBody), { headers: { 'Content-Type': 'application/json' }});

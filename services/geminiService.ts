@@ -2,11 +2,12 @@ import type { GenerateContentResponse } from "@google/genai";
 import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique } from '../types';
 
 // Helper for streaming responses from our backend
-async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, void, undefined> {
+async function* streamFetch(endpoint: string, body: any, signal?: AbortSignal): AsyncGenerator<any, void, undefined> {
     const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal,
     });
 
     if (!response.ok) {
@@ -33,9 +34,8 @@ async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, vo
         
         buffer += decoder.decode(value, { stream: true });
         
-        // Process line by line for line-delimited JSON
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep the last, potentially incomplete line
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
             if (line.trim()) {
@@ -46,15 +46,15 @@ async function* streamFetch(endpoint: string, body: any): AsyncGenerator<any, vo
 }
 
 // Helper for non-streaming JSON responses from our backend
-async function postFetch<T>(endpoint: string, body: any): Promise<T> {
+async function postFetch<T>(endpoint: string, body: any, signal?: AbortSignal): Promise<T> {
      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal,
     });
     if (!response.ok) {
         const errorText = await response.text();
-        // Try to parse error JSON from backend
         try {
             const errorJson = JSON.parse(errorText);
             throw new Error(errorJson.error || `API Error: ${response.status}`);
@@ -65,7 +65,6 @@ async function postFetch<T>(endpoint: string, body: any): Promise<T> {
     return response.json();
 }
 
-// FIX: Removed apiMode from the options type as it's no longer needed.
 export const listModels = async (options: { apiBaseUrl: string, apiKey: string }): Promise<string[]> => {
     return postFetch<string[]>('/api', {
         action: 'listModels',
@@ -73,48 +72,48 @@ export const listModels = async (options: { apiBaseUrl: string, apiKey: string }
     });
 }
 
-// NON-STREAMING: The initial research step before planning.
-export const performSearch = (storyCore: string, options: StoryOptions): Promise<{ text: string; citations: Citation[] }> => {
+export const performSearch = (storyCore: string, options: StoryOptions, signal?: AbortSignal): Promise<{ text: string; citations: Citation[] }> => {
     return postFetch<{ text: string; citations: Citation[] }>('/api', {
         action: 'performSearch',
         payload: { storyCore, options }
-    });
+    }, signal);
 };
 
-// NON-STREAMING: More reliable for a critical one-off generation.
-export const generateStoryOutline = (storyCore: string, options: StoryOptions): Promise<{ text: string }> => {
+// RE-INTRODUCED: Generate the story outline JSON from the research text.
+export const generateStoryOutline = (storyCore: string, researchText: string, options: StoryOptions, signal?: AbortSignal): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
         action: 'generateStoryOutline',
-        payload: { storyCore, options }
-    });
+        payload: { storyCore, researchText, options }
+    }, signal);
 };
+
 
 export const generateChapterStream = (
     outline: StoryOutline,
     historyChapters: GeneratedChapter[],
     options: StoryOptions,
-    detailedChapterOutline: DetailedOutlineAnalysis
+    detailedChapterOutline: DetailedOutlineAnalysis,
+    signal?: AbortSignal
 ) => {
     return streamFetch('/api', {
         action: 'generateChapter',
         payload: { outline, historyChapters, options, detailedChapterOutline }
-    });
+    }, signal);
 };
 
-// NON-STREAMING: This is a quick action, streaming is overkill.
 export const generateChapterTitles = async (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
-    options: StoryOptions
+    options: StoryOptions,
+    signal?: AbortSignal
 ): Promise<string[]> => {
     const { titles } = await postFetch<{ titles: string[] }>('/api', {
         action: 'generateChapterTitles',
         payload: { outline, chapters, options }
-    });
+    }, signal);
     return titles;
 };
 
-// NEW ARCHITECTURE: A single, non-streaming function for one iteration.
 export const generateSingleOutlineIteration = async (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
@@ -122,72 +121,77 @@ export const generateSingleOutlineIteration = async (
     options: StoryOptions,
     previousAttempt: { outline: DetailedOutlineAnalysis, critique: OutlineCritique } | null,
     userInput: string,
+    signal?: AbortSignal
 ): Promise<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }> => {
     return postFetch<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }>('/api', {
         action: 'generateSingleOutlineIteration',
         payload: { outline, chapters, chapterTitle, options, previousAttempt, userInput }
-    });
+    }, signal);
 };
 
 
 export const editChapterText = async (
     originalText: string,
     instruction: string,
-    options: StoryOptions
+    options: StoryOptions,
+    signal?: AbortSignal
 ): Promise<{ text: string }> => {
      return postFetch<{ text: string }>('/api', {
         action: 'editChapterText',
         payload: { originalText, instruction, options }
-    });
+    }, signal);
 };
 
 export const generateCharacterInteractionStream = (
     char1: CharacterProfile,
     char2: CharacterProfile,
     outline: StoryOutline,
-    options: StoryOptions
+    options: StoryOptions,
+    signal?: AbortSignal
 ) => {
     return streamFetch('/api', {
         action: 'generateCharacterInteraction',
         payload: { char1, char2, outline, options }
-    });
+    }, signal);
 };
 
 export const generateNewCharacterProfile = async (
     storyOutline: StoryOutline,
     characterPrompt: string,
-    options: StoryOptions
+    options: StoryOptions,
+    signal?: AbortSignal
 ): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
         action: 'generateNewCharacterProfile',
         payload: { storyOutline, characterPrompt, options }
-    });
+    }, signal);
 };
 
 // --- NEW CREATIVE TOOL SERVICES ---
 
-export const generateWorldbookSuggestions = async (storyOutline: StoryOutline, options: StoryOptions): Promise<{ text: string }> => {
+export const generateWorldbookSuggestions = async (storyOutline: StoryOutline, options: StoryOptions, signal?: AbortSignal): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
         action: 'getWorldbookSuggestions',
         payload: { storyOutline, options }
-    });
+    }, signal);
 };
 
-export const generateCharacterArcSuggestions = async (character: CharacterProfile, storyOutline: StoryOutline, options: StoryOptions): Promise<{ text: string }> => {
+export const generateCharacterArcSuggestions = async (character: CharacterProfile, storyOutline: StoryOutline, options: StoryOptions, signal?: AbortSignal): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
         action: 'getCharacterArcSuggestions',
         payload: { character, storyOutline, options }
-    });
+    }, signal);
 };
 
 export const generateNarrativeToolboxSuggestions = async (
     tool: 'iceberg' | 'conflict',
     detailedOutline: DetailedOutlineAnalysis,
     storyOutline: StoryOutline,
-    options: StoryOptions
+    options: StoryOptions,
+    signal?: AbortSignal
 ): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
         action: 'getNarrativeToolboxSuggestions',
         payload: { tool, detailedOutline, storyOutline, options }
-    });
+    }, signal);
 };

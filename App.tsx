@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
+// FIX: Import the newly added OutlineGenerationProgress type.
 import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry, OutlineGenerationProgress } from './types';
 import { performSearch, generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
 
@@ -23,8 +24,8 @@ import WorldbookEditor from './components/WorldbookEditor';
 import UploadIcon from './components/icons/UploadIcon';
 import ClipboardListIcon from './components/icons/ClipboardListIcon';
 import LogViewer from './components/LogViewer';
-import GenerationProgressModal from './components/GenerationProgressModal';
 import ThoughtProcessVisualizer from './components/ThoughtProcessVisualizer';
+import StopCircleIcon from './components/icons/StopCircleIcon';
 
 
 const storyStyles = {
@@ -91,17 +92,32 @@ const getInitialState = () => {
     try {
       const savedSession = localStorage.getItem('saved_story_session');
       if (savedSession) {
-        const { storyOutline, chapters, storyOptions, storyCore, generatedTitles, outlineHistory, activeOutlineTitle } = JSON.parse(savedSession);
-        
-        // Data Migration: Handle old worldEntries format
-        if (storyOutline && storyOutline.worldEntries && !storyOutline.worldCategories) {
-            storyOutline.worldCategories = [{ name: "核心设定", entries: storyOutline.worldEntries }];
-            delete storyOutline.worldEntries; // Remove old key
-        }
+        const { storyOutline, chapters, storyOptions, storyCore, generatedTitles, outlineHistory, activeOutlineTitle, thoughtSteps, gameState } = JSON.parse(savedSession);
         
         const mergedOptions = { ...DEFAULT_STORY_OPTIONS, ...(storyOptions || {}) };
 
-        // If there's an outline but no chapters, we're likely in the outlining phase
+        // If we are in the middle of planning, restore that state
+        if (gameState === GameState.PLANNING && thoughtSteps) {
+            return {
+                initialGameState: GameState.PLANNING,
+                initialActiveTab: 'agent' as ActiveTab,
+                initialStoryCore: storyCore || '',
+                initialStoryOutline: null,
+                initialChapters: [],
+                initialStoryOptions: mergedOptions,
+                initialGeneratedTitles: [],
+                initialOutlineHistory: {},
+                initialActiveOutlineTitle: null,
+                initialThoughtSteps: thoughtSteps,
+            };
+        }
+
+        // Data Migration: Handle old worldEntries format
+        if (storyOutline && storyOutline.worldEntries && !storyOutline.worldCategories) {
+            storyOutline.worldCategories = [{ name: "核心设定", entries: storyOutline.worldEntries }];
+            delete storyOutline.worldEntries;
+        }
+
         if (storyOutline && (!chapters || chapters.length === 0)) {
             return {
                 initialGameState: GameState.PLANNING_COMPLETE,
@@ -113,10 +129,10 @@ const getInitialState = () => {
                 initialGeneratedTitles: generatedTitles || [],
                 initialOutlineHistory: outlineHistory || {},
                 initialActiveOutlineTitle: activeOutlineTitle || null,
+                initialThoughtSteps: thoughtSteps || [],
             };
         }
         
-        // If there are chapters, we're in the writing phase
         if (chapters && chapters.length > 0 && storyOutline) {
           return {
             initialGameState: GameState.CHAPTER_COMPLETE,
@@ -128,12 +144,13 @@ const getInitialState = () => {
             initialGeneratedTitles: generatedTitles || [],
             initialOutlineHistory: outlineHistory || {},
             initialActiveOutlineTitle: activeOutlineTitle || null,
+            initialThoughtSteps: thoughtSteps || [],
           };
         }
       }
     } catch (e) {
       console.error("加载已保存的会话失败:", e);
-      localStorage.removeItem('saved_story_session'); // Clear corrupted data
+      localStorage.removeItem('saved_story_session');
     }
     // Default state
     return {
@@ -146,6 +163,7 @@ const getInitialState = () => {
       initialGeneratedTitles: [],
       initialOutlineHistory: {},
       initialActiveOutlineTitle: null,
+      initialThoughtSteps: [],
     };
 };
 
@@ -194,7 +212,8 @@ const App: React.FC = () => {
         initialStoryOptions,
         initialGeneratedTitles,
         initialOutlineHistory,
-        initialActiveOutlineTitle
+        initialActiveOutlineTitle,
+        initialThoughtSteps,
     } = useMemo(() => getInitialState(), []);
 
     const [gameState, setGameState] = useState<GameState>(initialGameState);
@@ -205,35 +224,31 @@ const App: React.FC = () => {
 
     const [storyOutline, setStoryOutline] = useState<StoryOutline | null>(initialStoryOutline);
     const [chapters, setChapters] = useState<GeneratedChapter[]>(initialChapters);
-    const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>([]);
+    const [thoughtSteps, setThoughtSteps] = useState<ThoughtStep[]>(initialThoughtSteps);
     const [error, setError] = useState<string | null>(null);
     
     const [editInput, setEditInput] = useState('');
     const [isEditing, setIsEditing] = useState(false);
+    const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-    // New state for outline generator
+
     const [generatedTitles, setGeneratedTitles] = useState<string[]>(initialGeneratedTitles);
     const [outlineHistory, setOutlineHistory] = useState<Record<string, string>>(initialOutlineHistory);
     const [activeOutlineTitle, setActiveOutlineTitle] = useState<string | null>(initialActiveOutlineTitle);
     
-    // New state for plan refinement
     const [planRefinementInput, setPlanRefinementInput] = useState('');
     
-    // New state for logging
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
 
-    // New global state for outline generation progress
+    // FIX: Add state to manage outline generation progress, which is now controlled by the parent component.
     const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
-    const [outlineGenerationProgress, setOutlineGenerationProgress] = useState<OutlineGenerationProgress | null>(null);
 
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
     const planRefinementInputRef = useRef<HTMLTextAreaElement>(null);
 
-    // --- LOGGING SYSTEM ---
     useEffect(() => {
-        // Load logs from localStorage on initial mount
         try {
             const savedLogs = localStorage.getItem('app_logs');
             if (savedLogs) {
@@ -245,7 +260,6 @@ const App: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        // Save logs to localStorage whenever they change
         try {
             localStorage.setItem('app_logs', JSON.stringify(logs));
         } catch (e) {
@@ -259,7 +273,7 @@ const App: React.FC = () => {
             type,
             message,
         };
-        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 50)); // Keep last 50 logs
+        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 50));
     }, []);
     
     const handleClearLogs = () => {
@@ -267,11 +281,10 @@ const App: React.FC = () => {
         addLog("日志已清除。", 'info');
     };
 
-
-    // Auto-saving logic
     useEffect(() => {
-        if (gameState !== GameState.INITIAL && gameState !== GameState.PLANNING) {
+        if (gameState !== GameState.INITIAL) {
             const sessionToSave = {
+                gameState,
                 storyOutline,
                 chapters,
                 storyOptions,
@@ -279,10 +292,11 @@ const App: React.FC = () => {
                 generatedTitles,
                 outlineHistory,
                 activeOutlineTitle,
+                thoughtSteps,
             };
             localStorage.setItem('saved_story_session', JSON.stringify(sessionToSave));
         }
-    }, [storyOutline, chapters, storyOptions, gameState, storyCore, generatedTitles, outlineHistory, activeOutlineTitle]);
+    }, [storyOutline, chapters, storyOptions, gameState, storyCore, generatedTitles, outlineHistory, activeOutlineTitle, thoughtSteps]);
 
 
     const scrollToBottom = (ref: React.RefObject<HTMLDivElement>) => {
@@ -308,8 +322,22 @@ const App: React.FC = () => {
         });
     };
 
+    const handleAbort = () => {
+        if (abortController) {
+            abortController.abort();
+            setAbortController(null);
+            addLog("用户已中止AI生成。", 'info');
+        }
+    };
 
     const handleError = (message: string, stepId?: number) => {
+        // Ignore abort errors
+        if (message.includes('The user aborted a request')) {
+            // Reset the state of the step that was running
+            setThoughtSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'pending' } : s));
+            setGameState(prev => (prev === GameState.PLANNING || prev === GameState.WRITING) ? GameState.INITIAL : prev);
+            return;
+        }
         setError(message);
         setGameState(GameState.ERROR);
         addLog(message, 'error');
@@ -360,49 +388,43 @@ const App: React.FC = () => {
         addLog(`启动AI代理，核心创意: "${coreToUse.substring(0, 50)}..."`, 'info');
         
         const initialSteps: ThoughtStep[] = [
-            { id: 0, title: "第一步：深度搜索与研究", model: storyOptions.searchModel, content: null, status: 'pending', citations: [] },
+            { id: 0, title: "第一步：研究与分析", model: storyOptions.searchModel, content: null, status: 'pending', citations: [] },
             { id: 1, title: "第二步：生成完整创作计划", model: storyOptions.planningModel, content: null, status: 'pending' }
         ];
         setThoughtSteps(initialSteps);
         setGameState(GameState.PLANNING);
         setTimeout(() => scrollToBottom(workspaceRef), 100);
-
-        let researchText = '';
-        try {
-            // STEP 1: SEARCH
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running' } : s));
-            const searchResponse = await performSearch(coreToUse, storyOptions);
-            researchText = searchResponse.text;
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: researchText, citations: searchResponse.citations } : s));
-        } catch (e: any) {
-            console.error("AI代理搜索步骤失败。", e);
-            if (e instanceof Error) handleError(e.message, 0);
-            return; // Stop execution if search fails
-        }
         
-        try {
-            // STEP 2: PLAN
-            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'running' } : s));
-            const planningCore = `### 原始创意\n${coreToUse}\n\n### AI研究与分析报告\n${researchText}`;
-            const planResponse = await generateStoryOutline(planningCore, storyOptions);
-            const planText = planResponse.text;
-            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'complete', content: planText } : s));
+        let currentAc: AbortController | null = null;
 
-            try {
-                const finalOutline = extractAndParseJson<StoryOutline>(
-                    planText,
-                    '\\[START_OUTLINE_JSON\\]',
-                    '\\[END_OUTLINE_JSON\\]',
-                    initialSteps[1].title
-                );
-                await handlePlanningSuccess(finalOutline);
-            } catch (assemblyError: any) {
-                console.error("组装创作计划时出错:", assemblyError);
-                handleError(`组装创作计划失败: ${assemblyError.message}`, 1);
-            }
+        try {
+            // STEP 1: RESEARCH
+            currentAc = new AbortController();
+            setAbortController(currentAc);
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running' } : s));
+            const searchResponse = await performSearch(coreToUse, storyOptions, currentAc.signal);
+            const researchText = searchResponse.text;
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: researchText, citations: searchResponse.citations } : s));
+
+            // STEP 2: GENERATE OUTLINE
+            currentAc = new AbortController();
+            setAbortController(currentAc);
+            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'running' } : s));
+            const outlineResponse = await generateStoryOutline(coreToUse, researchText, storyOptions, currentAc.signal);
+            const outlineText = outlineResponse.text;
+            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'complete', content: outlineText } : s));
+
+            const finalOutline = extractAndParseJson<StoryOutline>(
+                outlineText,
+                '\\[START_OUTLINE_JSON\\]',
+                '\\[END_OUTLINE_JSON\\]',
+                initialSteps[1].title
+            );
+            await handlePlanningSuccess(finalOutline);
         } catch (e: any) {
-            console.error("AI代理规划步骤失败。", e);
-            if (e instanceof Error) handleError(e.message, 1);
+            handleError(e.message, thoughtSteps.find(s => s.status === 'running')?.id);
+        } finally {
+            setAbortController(null);
         }
     };
     
@@ -432,7 +454,6 @@ const App: React.FC = () => {
                 '\\[END_DETAILED_OUTLINE_JSON\\]',
                 'chapter writing'
             );
-            // We only need the top-level analysis from the final version, not the history
             detailedOutlineForChapter = {
                 plotPoints: finalOutline.plotPoints,
                 nextChapterPreview: finalOutline.nextChapterPreview,
@@ -459,9 +480,12 @@ const App: React.FC = () => {
         };
         setChapters([...historyChapters, newChapter]);
         scrollToBottom(workspaceRef);
+        
+        const ac = new AbortController();
+        setAbortController(ac);
 
         try {
-            const stream = await generateChapterStream(storyOutline, historyChapters, storyOptions, detailedOutlineForChapter);
+            const stream = await generateChapterStream(storyOutline, historyChapters, storyOptions, detailedOutlineForChapter, ac.signal);
             let fullText = "";
             const thoughtStartMarker = '[START_THOUGHT_PROCESS]';
             const contentStartMarker = '[START_CHAPTER_CONTENT]';
@@ -479,7 +503,6 @@ const App: React.FC = () => {
                 const contentStartIndex = fullText.indexOf(contentStartMarker);
                 
                 if (contentStartIndex !== -1) {
-                    // Content has started streaming
                     const thoughtEndIndex = contentStartIndex;
                     const thoughtStartIndex = fullText.indexOf(thoughtStartMarker);
                     currentThought = thoughtStartIndex !== -1 
@@ -487,7 +510,6 @@ const App: React.FC = () => {
                         : '';
                     currentContent = fullText.substring(contentStartIndex + contentStartMarker.length).trimStart();
                 } else {
-                    // Still in thought process
                     const thoughtStartIndex = fullText.indexOf(thoughtStartMarker);
                      if (thoughtStartIndex !== -1) {
                         currentThought = fullText.substring(thoughtStartIndex + thoughtStartMarker.length).trim();
@@ -501,7 +523,6 @@ const App: React.FC = () => {
                 ));
             }
             
-            // Final processing after stream ends
             let finalThought = "";
             let finalContent = "";
             let finalTitle = newChapter.title;
@@ -522,26 +543,23 @@ const App: React.FC = () => {
                     finalTitle = titleMatch[1] ? titleMatch[1].trim() : finalTitle;
                     finalContent = contentAndTitleRaw.substring(titleMatch.index! + titleMatch[0].length).trimStart();
                 } else {
-                    finalContent = contentAndTitleRaw; // Fallback if title prefix is missing
+                    finalContent = contentAndTitleRaw;
                 }
 
                 if (finalContent.trim() === "" && finalThought.trim() !== "") {
                      setError("错误: AI在完成思考过程后停止了，未能生成正文。请尝试【重新生成】。");
                      addLog("章节生成失败: AI仅生成了思考过程。", 'error');
-                     finalContent = ""; // Keep content empty on this specific error
+                     finalContent = "";
                 }
 
             } else if (thoughtStartIndex !== -1) {
-                // Only thought process was generated
                 finalThought = fullText.substring(thoughtStartMarker.length).trim();
                 setError("错误: AI在完成思考过程后停止了，未能生成正文。请尝试【重新生成】。");
                 addLog("章节生成失败: AI仅生成了思考过程。", 'error');
                 finalContent = "";
             } else {
-                // No markers found, treat the whole thing as content (should not happen with new prompt)
                 finalContent = fullText;
             }
-
 
             setChapters(prev => prev.map(c => 
                 c.id === newChapterId 
@@ -553,7 +571,9 @@ const App: React.FC = () => {
 
         } catch (e:any) {
             handleError(e.message || "章节生成过程中发生未知错误。", undefined);
-            setChapters(historyChapters); // Revert to pre-writing state on error
+            setChapters(historyChapters);
+        } finally {
+            setAbortController(null);
         }
     };
     
@@ -582,9 +602,11 @@ const App: React.FC = () => {
         
         setIsEditing(true);
         addLog(`开始微调最新章节... 指令: ${editInput}`, 'info');
+        const ac = new AbortController();
+        setAbortController(ac);
 
         try {
-            const response = await editChapterText(lastChapter.content, editInput, storyOptions);
+            const response = await editChapterText(lastChapter.content, editInput, storyOptions, ac.signal);
             const newContent = response.text;
             setChapters(prev => prev.map(c => 
                 c.id === lastChapter.id ? { ...c, content: newContent } : c
@@ -596,6 +618,7 @@ const App: React.FC = () => {
            addLog(`文本微调失败: ${e.message}`, 'error');
         } finally {
             setIsEditing(false);
+            setAbortController(null);
         }
     };
 
@@ -606,33 +629,46 @@ const App: React.FC = () => {
         }
     };
     
+    // FIX: Add handlers for the outline generation progress callbacks from the OutlineGenerator component.
+    const handleOutlineGenerationStart = (initialProgress: OutlineGenerationProgress) => {
+        setIsGeneratingOutline(true);
+    };
+    const handleOutlineGenerationProgress = (progress: OutlineGenerationProgress) => {
+        // This function can be expanded later to show detailed progress in a UI element.
+    };
+    const handleOutlineGenerationEnd = () => {
+        setIsGeneratingOutline(false);
+    };
+
     const renderThoughtStepContent = (step: ThoughtStep) => {
         if (!step.content) return null;
-        if (step.id !== 1) { // Apply old highlighting for step 0 (search)
-            return <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{step.content}</div>;
+    
+        // Step 1 (ID 0) is pure markdown
+        if (step.id === 0) {
+            return <ThoughtProcessVisualizer text={step.content} refineCallback={handleRefineFromSuggestion} />;
         }
-
+    
+        // Step 2 (ID 1) has markdown thought process and JSON
         const thoughtEndMarker = '[START_OUTLINE_JSON]';
         const thoughtEndIndex = step.content.indexOf(thoughtEndMarker);
-
-        if (thoughtEndIndex === -1) { // Fallback if format is unexpected
-             return <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{step.content}</div>;
+    
+        if (thoughtEndIndex !== -1) {
+            const thoughtText = step.content.substring(0, thoughtEndIndex).trim();
+            const jsonText = step.content.substring(thoughtEndIndex);
+            return (
+                <div className="space-y-4">
+                    <ThoughtProcessVisualizer text={thoughtText} refineCallback={handleRefineFromSuggestion} />
+                    <pre className="text-xs bg-slate-950/50 p-2 rounded-md mt-4 border border-slate-700 text-purple-300 overflow-x-auto"><code>{jsonText}</code></pre>
+                </div>
+            );
         }
-
-        const thoughtText = step.content.substring(0, thoughtEndIndex).trim();
-        const jsonText = step.content.substring(thoughtEndIndex);
-
-        return (
-            <div className="space-y-4">
-                <ThoughtProcessVisualizer text={thoughtText} refineCallback={handleRefineFromSuggestion} />
-                <pre className="text-xs bg-slate-950/50 p-2 rounded-md mt-4 border border-slate-700 text-purple-300 overflow-x-auto"><code>{jsonText}</code></pre>
-            </div>
-        );
+    
+        // Fallback for unexpected content format
+        return <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{step.content}</div>;
     };
     
     const handleResetPlan = () => {
         if (window.confirm("确定要重置计划吗？这将清除当前生成的所有内容（大纲、角色、章节），但保留您的核心创意和设置。")) {
-            // Only clear generated content
             setStoryOutline(null);
             setChapters([]);
             setGeneratedTitles([]);
@@ -643,8 +679,6 @@ const App: React.FC = () => {
             setGameState(GameState.PLANNING_COMPLETE);
             setActiveTab('agent');
             addLog("项目已重置，保留核心创意和设置。", 'info');
-            // Keep storyCore and storyOptions
-            // Trigger a re-plan
             startAgent();
         }
     };
@@ -678,10 +712,8 @@ const App: React.FC = () => {
         const safeTitle = (storyOutline?.title || 'story-export').replace(/[^a-z0-9-_\u4E00-\u9FA5]/gi, '_');
         const fileName = `${safeTitle}.json`;
 
-        // Use the modern File System Access API if available for a better user experience
         if ('showSaveFilePicker' in window) {
             try {
-                // `window.showSaveFilePicker` is not in the default TS DOM lib yet
                 const handle = await (window as any).showSaveFilePicker({
                     suggestedName: fileName,
                     types: [{
@@ -693,21 +725,18 @@ const App: React.FC = () => {
                 await writable.write(blob);
                 await writable.close();
                 addLog(`项目已成功导出为 ${fileName}`, 'success');
-                return; // Early return on success
+                return;
             } catch (err: any) {
-                // AbortError is expected if the user cancels the save dialog.
                 if (err.name !== 'AbortError') {
                     console.error("文件系统访问API错误:", err);
                     addLog(`使用高级导出模式失败: ${err.message}`, 'error');
-                    // Fall through to legacy method on other errors
                 } else {
                     addLog("导出操作已取消。", 'info');
-                    return; // User cancelled, do nothing.
+                    return;
                 }
             }
         }
 
-        // Fallback for browsers that don't support the API
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -744,10 +773,8 @@ const App: React.FC = () => {
                 let historyToLoad: Record<string, string> = data.outlineHistory || {};
                 let activeTitleToLoad: string | null = data.activeOutlineTitle || null;
                 
-                // Case 1: Full project file with storyOutline
                 if (data.storyOutline && typeof data.storyOutline === 'object') {
                     storyOutlineToLoad = {
-                         // Provide defaults for all fields to ensure type safety
                         title: '无标题',
                         genreAnalysis: '',
                         worldConcept: '',
@@ -763,11 +790,9 @@ const App: React.FC = () => {
                        coreToLoad = storyOutlineToLoad?.plotSynopsis || '';
                     }
                 } 
-                // Case 2: Arbitrary JSON as creative seed
                 else {
                     const creativeSeed = JSON.stringify(data, null, 2);
                     coreToLoad = creativeSeed;
-                    // We start a new project based on this seed
                     storyOutlineToLoad = null; 
                     chaptersToLoad = [];
                     titlesToLoad = [];
@@ -786,7 +811,6 @@ const App: React.FC = () => {
                 addLog(`成功导入文件: ${file.name}`, 'success');
 
                 if (storyOutlineToLoad) {
-                    // If we have a full outline, go to the workspace
                     if (chaptersToLoad.length > 0) {
                         setGameState(GameState.CHAPTER_COMPLETE);
                         setActiveTab('writing');
@@ -795,8 +819,7 @@ const App: React.FC = () => {
                         setActiveTab('outline');
                     }
                 } else {
-                    // If it was a creative seed, start the agent automatically
-                    setGameState(GameState.INITIAL); // Go to initial to show loading state on button
+                    setGameState(GameState.INITIAL);
                     startAgent(coreToLoad);
                 }
 
@@ -913,6 +936,9 @@ const App: React.FC = () => {
             </button>
         );
 
+        // FIX: Add isGeneratingOutline to the check for running tasks.
+        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing || isGeneratingOutline;
+
         return (
             <div className="h-screen flex flex-col">
                 <header className="flex-shrink-0 bg-slate-900/50 backdrop-blur-lg border-b border-white/10 z-20 p-2 flex items-center justify-between">
@@ -928,6 +954,16 @@ const App: React.FC = () => {
                         </h1>
                      </div>
                      <div className="flex items-center space-x-2">
+                         {isTaskRunning && (
+                            <button 
+                                onClick={handleAbort}
+                                className="flex items-center gap-x-2 px-4 py-2 rounded-md font-semibold transition bg-red-600 text-white hover:bg-red-500 text-sm"
+                                title="停止当前AI任务"
+                            >
+                                <StopCircleIcon className="w-5 h-5" />
+                                <span>停止</span>
+                            </button>
+                         )}
                         <button 
                             onClick={handleResetPlan}
                             className="px-4 py-2 rounded-md font-semibold transition bg-amber-600 text-white hover:bg-amber-500 text-sm"
@@ -1041,10 +1077,11 @@ const App: React.FC = () => {
                                 storyOptions={storyOptions}
                                 activeOutlineTitle={activeOutlineTitle}
                                 setActiveOutlineTitle={setActiveOutlineTitle}
-                                onGenerationStart={(progress) => { setIsGeneratingOutline(true); setOutlineGenerationProgress(progress); }}
-                                onGenerationProgress={setOutlineGenerationProgress}
-                                onGenerationEnd={() => { setIsGeneratingOutline(false); setOutlineGenerationProgress(null); }}
+                                // FIX: Pass the new props for state management to the component.
                                 isGenerating={isGeneratingOutline}
+                                onGenerationStart={handleOutlineGenerationStart}
+                                onGenerationProgress={handleOutlineGenerationProgress}
+                                onGenerationEnd={handleOutlineGenerationEnd}
                              />
                         )}
                         {activeTab === 'writing' && (
@@ -1099,12 +1136,6 @@ const App: React.FC = () => {
                                     <div className="flex flex-col md:flex-row justify-center items-center gap-4">
                                         {chapters.length > 0 && (
                                             <>
-                                                {/*
-                                                  * FIX: Removed redundant `disabled={gameState === GameState.WRITING}` check.
-                                                  * The parent container already has a condition `gameState !== GameState.WRITING`,
-                                                  * which means TypeScript correctly infers that `gameState` cannot be `WRITING` here.
-                                                  * This redundancy was causing a type error.
-                                                */}
                                                 <button 
                                                     onClick={regenerateLastChapter} 
                                                     className="w-full md:w-auto flex items-center justify-center px-8 py-4 bg-slate-600 text-white font-bold rounded-lg hover:bg-slate-500 transition-transform transform hover:scale-105 shadow-lg"
@@ -1193,10 +1224,6 @@ const App: React.FC = () => {
                 onClose={() => setIsLogViewerOpen(false)}
                 logs={logs}
                 onClear={handleClearLogs}
-            />
-            <GenerationProgressModal 
-                isOpen={isGeneratingOutline}
-                progress={outlineGenerationProgress}
             />
             {gameState === GameState.INITIAL || (gameState === GameState.ERROR && !storyOutline) ? renderInitialView() : renderAgentWorkspace()}
         </div>
