@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
-import { generateChapterTitles, generateSingleOutlineIteration, generateNarrativeToolboxSuggestions } from '../services/geminiService';
+import { generateChapterTitles, generateSingleOutlineIteration, refineOutlineWithTool } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 import SendIcon from './icons/SendIcon';
@@ -295,7 +295,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     };
 
     const handleToolboxRequest = async (tool: 'iceberg' | 'conflict') => {
-        if (!parsedOutline) {
+        if (!parsedOutline || !activeOutlineTitle) {
             setToolboxError("无法使用工具，需要先生成一个有效的细纲。");
             return;
         }
@@ -303,12 +303,39 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setToolboxResult(null);
         setToolboxError(null);
         try {
-            const detailedOutline: DetailedOutlineAnalysis = {
+            const currentDetailedOutline: DetailedOutlineAnalysis = {
                 plotPoints: parsedOutline.plotPoints,
                 nextChapterPreview: parsedOutline.nextChapterPreview,
             };
-            const response = await generateNarrativeToolboxSuggestions(tool, detailedOutline, storyOutline, storyOptions);
-            setToolboxResult(response.text);
+
+            const response = await refineOutlineWithTool(tool, currentDetailedOutline, storyOutline, storyOptions);
+            
+            const newVersion = parsedOutline.finalVersion + 1;
+
+            const newHistoryEntry: OptimizationHistoryEntry = {
+                version: newVersion,
+                critique: {
+                    thoughtProcess: `This version was refined using the '${tool === 'iceberg' ? 'Iceberg Principle' : 'Conflict Generation'}' tool.\n\n${response.explanation}`,
+                    overallScore: parsedOutline.optimizationHistory.slice(-1)[0]?.critique.overallScore || 8.0, // Carry over score
+                    scoringBreakdown: [],
+                    improvementSuggestions: [{
+                        area: `Tool: ${tool === 'iceberg' ? '信息载体 (冰山法则)' : '规则冲突'}`,
+                        suggestion: response.explanation
+                    }]
+                },
+                outline: response.refinedOutline
+            };
+
+            const finalResultForState: FinalDetailedOutline = {
+                ...response.refinedOutline,
+                finalVersion: newVersion,
+                optimizationHistory: [...parsedOutline.optimizationHistory, newHistoryEntry]
+            };
+
+            const resultString = `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(finalResultForState, null, 2)}\n[END_DETAILED_OUTLINE_JSON]`;
+            setOutlineHistory(prev => ({ ...prev, [activeOutlineTitle]: resultString }));
+            setToolboxResult(response.explanation);
+
         } catch (e: any) {
             setToolboxError(e.message || "获取建议时发生未知错误。");
         } finally {
@@ -432,6 +459,9 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                             <div className="md:col-span-2">
                                                 <AnalysisField label="逻辑夯实 (合理性与铺垫)" value={point.logicSolidification} color="text-green-400" />
                                             </div>
+                                             <div className="md:col-span-2">
+                                                <AnalysisField label="世界观揭示 (冰山法则)" value={point.worldviewReveal} color="text-lime-400" />
+                                            </div>
                                             <div className="md:col-span-2">
                                                 <AnalysisField label="情绪与互动强化 (冲突张力)" value={point.emotionAndInteraction} color="text-pink-400" />
                                             </div>
@@ -455,18 +485,18 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                             <div className="p-4 bg-slate-900/50 rounded-lg space-y-3">
                                 <h4 className="text-sm font-medium text-slate-300">AI 叙事工具箱</h4>
                                 <div className="flex flex-wrap gap-2">
-                                    <button onClick={() => handleToolboxRequest('iceberg')} disabled={isToolboxLoading} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                                    <button onClick={() => handleToolboxRequest('iceberg')} disabled={!parsedOutline || isToolboxLoading} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                         {isToolboxLoading ? <LoadingSpinner className="w-3.5 h-3.5"/> : <SparklesIcon className="w-3.5 h-3.5"/>}
                                         <span>建议信息载体 (冰山法则)</span>
                                     </button>
-                                    <button onClick={() => handleToolboxRequest('conflict')} disabled={isToolboxLoading} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                                    <button onClick={() => handleToolboxRequest('conflict')} disabled={!parsedOutline || isToolboxLoading} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                                         {isToolboxLoading ? <LoadingSpinner className="w-3.5 h-3.5"/> : <SparklesIcon className="w-3.5 h-3.5"/>}
                                         <span>构思规则冲突</span>
                                     </button>
                                 </div>
                                 {toolboxResult && (
                                     <div className="mt-3 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
-                                        <h5 className="font-bold text-indigo-300 mb-2">AI 创意启发</h5>
+                                        <h5 className="font-bold text-indigo-300 mb-2">AI 优化说明</h5>
                                         <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: toolboxResult.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-400">$1</strong>') }} />
                                     </div>
                                 )}

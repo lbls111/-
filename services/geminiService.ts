@@ -174,15 +174,15 @@ export const generateCharacterArcSuggestions = async (character: CharacterProfil
     }, signal);
 };
 
-export const generateNarrativeToolboxSuggestions = async (
+export const refineOutlineWithTool = async (
     tool: 'iceberg' | 'conflict',
     detailedOutline: DetailedOutlineAnalysis,
     storyOutline: StoryOutline,
     options: StoryOptions,
     signal?: AbortSignal
-): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'getNarrativeToolboxSuggestions',
+): Promise<{ refinedOutline: DetailedOutlineAnalysis; explanation: string; }> => {
+    return postFetch<{ refinedOutline: DetailedOutlineAnalysis; explanation: string; }>('/api', {
+        action: 'refineOutlineWithTool',
         payload: { tool, detailedOutline, storyOutline, options }
     }, signal);
 };

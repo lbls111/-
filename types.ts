@@ -137,6 +137,7 @@ export interface PlotPointAnalysis {
   logicSolidification: string;
   emotionAndInteraction: string;
   pacingControl: string;
+  worldviewReveal: string;
 }
 
 export interface NextChapterPreview {
