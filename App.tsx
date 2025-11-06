@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
 import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry, OutlineGenerationProgress, WorldCategory } from './types';
@@ -368,12 +369,11 @@ const App: React.FC = () => {
 
         const newOutline: Partial<StoryOutline> = {};
     
-        // FIX: Replaced brittle `indexOf` logic with a robust RegEx-based section extractor.
         const extractSection = (text: string, heading: string): string => {
             // This regex finds a markdown heading (e.g., "## Plot Synopsis") and captures all content
-            // until the next heading of the same or higher level (e.g., another "##" or "#"), or the end of the string.
-            // It's case-insensitive and handles variable whitespace.
-            const regex = new RegExp(`#{2,}\\s*${heading}\\s*\\n([\\s\\S]*?)(?=\\n#{2,}\\s|$)`, 'i');
+            // until the next heading or the end of the string.
+            // It's case-insensitive and robust against various whitespace/newline formatting from the LLM.
+            const regex = new RegExp(`#{2,}\\s*${heading}\\s+([\\s\\S]*?)(?=\\s*#{2,}|$)`, 'i');
             const match = text.match(regex);
             return match ? match[1].trim() : '';
         };
@@ -1119,37 +1119,28 @@ const App: React.FC = () => {
                                                     className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition resize-y"
                                                     disabled={gameState === GameState.PLANNING}
                                                 />
-                                                <button type="submit" className="w-full flex items-center justify-center px-8 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed" disabled={gameState === GameState.PLANNING || !planRefinementInput.trim()}>
-                                                    {gameState === GameState.PLANNING ? <LoadingSpinner className="w-6 h-6 mr-2"/> : <RefreshCwIcon className="w-6 h-6 mr-2" />}
-                                                    {gameState === GameState.PLANNING ? '正在运行...' : '重新生成计划'}
+                                                <button type="submit" className="w-full flex items-center justify-center px-8 py-3 bg-sky-600 text-white font-bold rounded-lg hover:bg-sky-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed" disabled={!planRefinementInput.trim() || gameState === GameState.PLANNING}>
+                                                    {gameState === GameState.PLANNING ? <LoadingSpinner className="w-5 h-5 mr-2"/> : <MagicWandIcon className="w-5 h-5 mr-2"/>}
+                                                    {gameState === GameState.PLANNING ? '正在重新规划...' : '优化并重新生成'}
                                                 </button>
                                             </form>
-                                            <p className="text-xs text-slate-500 mt-2">
-                                                AI将基于你最初的核心创意和新的优化指令，重新生成一份完整的创作计划。
-                                            </p>
                                         </div>
+                                    </div>
+                                )}
+                                {error && (
+                                    <div className="mt-4 p-4 bg-red-900/30 border border-red-500/50 rounded-lg text-red-300">
+                                        <h3 className="font-bold">发生错误</h3>
+                                        <p className="text-sm">{error}</p>
                                     </div>
                                 )}
                             </div>
                         )}
-                        {activeTab === 'worldbook' && storyOutline && (
-                           <WorldbookEditor 
-                                storyOutline={storyOutline}
-                                onUpdate={updateStoryOutline}
-                                storyOptions={storyOptions}
-                           />
-                        )}
-                        {activeTab === 'characters' && storyOutline && (
-                            <CharacterArchive 
-                                storyOutline={storyOutline}
-                                onUpdate={updateStoryOutline}
-                                storyOptions={storyOptions}
-                             />
-                        )}
+                        {activeTab === 'worldbook' && storyOutline && <WorldbookEditor storyOutline={storyOutline} onUpdate={updateStoryOutline} storyOptions={storyOptions} />}
+                        {activeTab === 'characters' && storyOutline && <CharacterArchive storyOutline={storyOutline} onUpdate={updateStoryOutline} storyOptions={storyOptions}/>}
                         {activeTab === 'outline' && storyOutline && (
-                             <OutlineGenerator
-                                storyOutline={storyOutline}
-                                chapters={chapters}
+                            <OutlineGenerator 
+                                storyOutline={storyOutline} 
+                                chapters={chapters} 
                                 generatedTitles={generatedTitles}
                                 setGeneratedTitles={setGeneratedTitles}
                                 outlineHistory={outlineHistory}
@@ -1161,155 +1152,91 @@ const App: React.FC = () => {
                                 setIsGenerating={setIsOutlineGenerating}
                                 setProgress={setOutlineGenerationProgress}
                                 setController={setAbortController}
-                             />
+                            />
                         )}
                         {activeTab === 'writing' && (
-                             <div className="space-y-6">
-                                {chapters.length > 0 ? (
-                                    <div className="glass-card p-6 rounded-lg space-y-6">
-                                        <h2 className="text-xl font-bold text-slate-100 flex items-center justify-between">
-                                            <span className="flex items-center"><FilePenIcon className="w-5 h-5 mr-2" />创作正文</span>
-                                            <div className='flex items-center gap-x-2'>
-                                                <span className="text-xs font-mono bg-slate-700/50 text-purple-300 px-2 py-1 rounded">{storyOptions.authorStyle}</span>
-                                                <span className="text-xs font-mono bg-slate-700/50 text-amber-300 px-2 py-1 rounded">{storyOptions.writingModel}</span>
-                                            </div>
-                                        </h2>
-                                        {chapters.map(chapter => (
-                                            <div key={chapter.id} className="border-t border-white/10 pt-6">
-                                                <h3 className="text-xl font-bold text-teal-300 mb-4 flex items-center">
-                                                    {chapter.title}
-                                                </h3>
-
-                                                {chapter.preWritingThought && (
-                                                    <details className="mb-4 group" open={chapter.status !== 'complete'}>
-                                                        <summary className="cursor-pointer list-none flex items-center text-sm font-bold text-indigo-300 p-2 rounded-lg hover:bg-indigo-950/40 transition-colors">
-                                                            <BrainCircuitIcon className="w-4 h-4 mr-2" />
-                                                            创作前整合思考
-                                                            <span className="ml-2 text-indigo-400/70 transform transition-transform group-open:rotate-90">&#9654;</span>
-                                                        </summary>
-                                                        <div className="mt-2 pl-6">
-                                                            <div className="p-4 border border-indigo-500/30 bg-indigo-950/20 rounded-lg">
-                                                                <div className="text-sm text-slate-400 whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1">
-                                                                {chapter.preWritingThought}
-                                                                {chapter.status === 'streaming' && !chapter.content && <span className="inline-block w-2 h-3 bg-slate-300 animate-pulse ml-1" />}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </details>
-                                                )}
-
-                                                <div className="text-slate-300 whitespace-pre-wrap font-serif leading-relaxed text-base prose prose-invert prose-p:mb-4">
-                                                    {chapter.content || (chapter.status !== 'complete' && '...')}
-                                                    {chapter.status === 'streaming' && chapter.content && <span className="inline-block w-2 h-4 bg-slate-300 animate-pulse ml-1" />}
+                            <div className="max-w-4xl mx-auto">
+                                {chapters.map((chapter, index) => (
+                                    <div key={chapter.id} className="mb-8 p-6 glass-card rounded-lg">
+                                        <h2 className="text-2xl font-bold text-teal-300 mb-4 border-b border-white/10 pb-2">{chapter.title}</h2>
+                                        {chapter.preWritingThought && (
+                                            <details className="mb-4">
+                                                <summary className="text-sm text-slate-400 cursor-pointer hover:text-slate-200">查看AI写作思路</summary>
+                                                <div className="mt-2 p-3 bg-slate-900/50 rounded-md text-slate-400 text-xs whitespace-pre-wrap font-mono border border-slate-700">
+                                                    {chapter.preWritingThought}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            </details>
+                                        )}
+                                        <div className="prose prose-lg prose-invert max-w-none prose-p:leading-relaxed prose-p:text-slate-300">
+                                            {chapter.content.split('\n').map((paragraph, i) => (
+                                                <p key={i}>{paragraph}</p>
+                                            ))}
+                                            {chapter.status === 'streaming' && <span className="inline-block w-3 h-6 bg-slate-300 animate-pulse ml-1" />}
+                                        </div>
                                     </div>
-                                ) : (
-                                    <div className="text-center py-16 text-slate-500">
-                                        <p>请先在“细纲”模块为第一章生成细纲分析，然后回到此处开始写作。</p>
+                                ))}
+
+                                {gameState === GameState.WRITING && (
+                                    <div className="flex justify-center my-8">
+                                        <LoadingSpinner className="w-8 h-8 text-teal-400" />
                                     </div>
                                 )}
                                 
-                                {gameState !== GameState.WRITING && gameState !== GameState.PLANNING && (
-                                    <div className="flex flex-col md:flex-row justify-center items-center gap-4">
-                                        {chapters.length > 0 && (
-                                            <>
-                                                <button 
-                                                    onClick={regenerateLastChapter} 
-                                                    className="w-full md:w-auto flex items-center justify-center px-8 py-4 bg-slate-600 text-white font-bold rounded-lg hover:bg-slate-500 transition-transform transform hover:scale-105 shadow-lg"
-                                                >
-                                                    <RefreshCwIcon className="w-6 h-6 mr-2" />重新生成
-                                                </button>
-                                            </>
-                                        )}
-                                        <button 
-                                            onClick={() => writeChapter(nextChapterTitle, outlineHistory[nextChapterTitle])} 
-                                            disabled={isWriteButtonDisabled}
-                                            title={writeButtonTooltip}
-                                            className="w-full md:w-auto flex items-center justify-center px-8 py-4 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-700 disabled:text-slate-400 disabled:cursor-not-allowed disabled:transform-none"
-                                        >
-                                            <SparklesIcon className="w-6 h-6 mr-2" />
-                                            {chapters.length > 0 ? `撰写第 ${chapters.length + 1} 章` : '撰写第一章'}
-                                        </button>
-                                    </div>
-                                )}
-
-                                {gameState === GameState.WRITING && (
-                                    <div className="text-center p-4 text-slate-400 flex items-center justify-center">
-                                        <LoadingSpinner className="mr-2"/>
-                                        {chapters.length > 0 && !chapters[chapters.length-1].content 
-                                            ? "正在整合思考创作计划..."
-                                            : "正在创作中..."
-                                        }
-                                    </div>
-                                )}
-
-                                {chapters.length > 0 && chapters[chapters.length-1].status === 'complete' && (
-                                    <div className="mt-6 glass-card p-4 rounded-lg">
-                                        <h3 className="text-lg font-semibold text-slate-200 mb-3">文本微调 (局部改写)</h3>
-                                        <form onSubmit={handleEditSubmit} className="flex items-center gap-2">
+                                {gameState === GameState.CHAPTER_COMPLETE && (
+                                     <div className="mt-8 space-y-4">
+                                        <div className="flex items-center gap-x-4">
+                                            <button 
+                                                title={writeButtonTooltip}
+                                                disabled={isWriteButtonDisabled || !storyOptions.writingModel}
+                                                onClick={() => {
+                                                    if (nextChapterTitle && outlineHistory[nextChapterTitle]) {
+                                                        writeChapter(nextChapterTitle, outlineHistory[nextChapterTitle]);
+                                                    }
+                                                }} 
+                                                className="flex-grow flex items-center justify-center px-8 py-4 bg-teal-600 text-white font-bold rounded-lg hover:bg-teal-500 transition-transform transform hover:scale-105 shadow-lg disabled:bg-slate-600 disabled:cursor-not-allowed"
+                                            >
+                                                <FilePenIcon className="w-6 h-6 mr-2" />
+                                                写下一章: {nextChapterTitle || `第 ${nextChapterIndex + 1} 章`}
+                                            </button>
+                                            <button
+                                                onClick={regenerateLastChapter}
+                                                title="使用相同的细纲重新生成最后一章"
+                                                className="p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+                                            >
+                                                <RefreshCwIcon className="w-6 h-6 text-white"/>
+                                            </button>
+                                        </div>
+                                        <form onSubmit={handleEditSubmit} className="flex items-center gap-x-2">
                                             <input 
                                                 type="text"
                                                 value={editInput}
-                                                onChange={e => setEditInput(e.target.value)}
-                                                placeholder="输入修改指令，例如：优化第一段那个比喻..."
-                                                className="flex-grow p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
+                                                onChange={(e) => setEditInput(e.target.value)}
+                                                placeholder="输入指令对最新章节进行微调..."
+                                                className="w-full p-3 bg-slate-900/70 border border-slate-700 rounded-lg text-slate-200 focus:ring-2 focus:ring-sky-500 transition"
                                                 disabled={isEditing}
                                             />
-                                            <button type="submit" className="p-3 rounded-lg bg-sky-600 hover:bg-sky-500 transition disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center" disabled={isEditing || !editInput.trim()}>
-                                                {isEditing ? <LoadingSpinner className="w-6 h-6 text-white" /> : <MagicWandIcon className="w-6 h-6 text-white"/>}
+                                            <button type="submit" className="p-3 bg-sky-600 hover:bg-sky-500 rounded-lg disabled:bg-slate-600" disabled={isEditing || !editInput.trim()}>
+                                                {isEditing ? <LoadingSpinner className="w-6 h-6 text-white"/> : <MagicWandIcon className="w-6 h-6 text-white"/>}
                                             </button>
                                         </form>
-                                         <p className="text-xs text-slate-500 mt-2">
-                                            对最新章节的文本进行精确修改。AI将只重写您指定的部分，并保持其余内容不变。
-                                        </p>
                                     </div>
                                 )}
-                            </div>
-                        )}
-
-                        {error && (
-                            <div className="mt-6 text-center p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
-                                <p className="text-red-400 font-semibold">发生错误</p>
-
-                                <p className="text-red-400 text-sm mt-1">{error}</p>
                             </div>
                         )}
                     </div>
                 </main>
             </div>
-        );
-    }
-
-
+        )
+    };
+    
     return (
-        <div className="w-full h-screen bg-slate-950">
-            <input 
-                type="file" 
-                ref={importFileRef} 
-                className="hidden" 
-                accept=".json" 
-                onChange={handleImport}
-            />
-            <SettingsModal
-                isOpen={isSettingsOpen}
-                onClose={() => setIsSettingsOpen(false)}
-                options={storyOptions}
-                setOptions={setStoryOptions}
-            />
-            <LogViewer
-                isOpen={isLogViewerOpen}
-                onClose={() => setIsLogViewerOpen(false)}
-                logs={logs}
-                onClear={handleClearLogs}
-            />
-            <GenerationProgressModal
-                isOpen={isOutlineGenerating}
-                progress={outlineGenerationProgress}
-                onAbort={handleAbort}
-            />
-            {gameState === GameState.INITIAL || (gameState === GameState.ERROR && !storyOutline) ? renderInitialView() : renderAgentWorkspace()}
+        <div className="h-screen w-screen overflow-hidden">
+            <input type="file" ref={importFileRef} onChange={handleImport} accept=".json" style={{ display: 'none' }} />
+            {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} options={storyOptions} setOptions={setStoryOptions} />}
+            <LogViewer isOpen={isLogViewerOpen} onClose={() => setIsLogViewerOpen(false)} logs={logs} onClear={handleClearLogs} />
+            <GenerationProgressModal isOpen={isOutlineGenerating} progress={outlineGenerationProgress} onAbort={() => { handleAbort(); setIsOutlineGenerating(false); }} />
+
+            {gameState === GameState.INITIAL ? renderInitialView() : renderAgentWorkspace()}
         </div>
     );
 };
