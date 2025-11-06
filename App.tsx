@@ -363,83 +363,53 @@ const App: React.FC = () => {
             setThoughtSteps(prev => prev.map(s => s.id === stepId ? { ...s, status: 'error' } : s));
         }
     };
-
-    const parseResearchToOutline = (markdown: string): StoryOutline => {
-        addLog("开始解析AI生成的创作简报...", 'info');
-
-        const newOutline: Partial<StoryOutline> = {};
     
-        const extractSection = (text: string, heading: string): string => {
-            // This regex finds a markdown heading (e.g., "## Plot Synopsis") and captures all content
-            // until the next heading or the end of the string.
-            // It's case-insensitive and robust against various whitespace/newline formatting from the LLM.
-            const regex = new RegExp(`#{2,}\\s*${heading}\\s+([\\s\\S]*?)(?=\\s*#{2,}|$)`, 'i');
-            const match = text.match(regex);
-            return match ? match[1].trim() : '';
-        };
-
-        const extractListItem = (textBlock: string, key: string): string => {
-            // This regex is already robust, so we keep it.
-            const regex = new RegExp(`- \\*\\*${key}\\*\\*:\\s*([\\s\\S]*?)(?=\\n- \\*\\*|$)`, 'i');
-            const match = textBlock.match(regex);
-            return match ? match[1].trim() : '';
-        };
+    const parseAndValidateOutlineJSON = (responseText: string): StoryOutline => {
+        addLog("开始解析AI生成的JSON创作简报...", 'info');
+        let jsonString = responseText;
     
-        newOutline.title = markdown.match(/#\s*Title:\s*(.*)/i)?.[1]?.trim() || '无标题';
+        const jsonStart = responseText.indexOf('{');
+        if (jsonStart !== -1) {
+            const jsonEnd = responseText.lastIndexOf('}');
+            if (jsonEnd > jsonStart) {
+                jsonString = responseText.substring(jsonStart, jsonEnd + 1);
+            } else {
+                 throw new Error("JSON解析失败：在AI的输出中未能找到一个有效的JSON对象结构。");
+            }
+        } else {
+             throw new Error("JSON解析失败：在AI的输出中未能找到JSON对象的起始符号 '{'。");
+        }
     
-        newOutline.genreAnalysis = extractSection(markdown, 'Genre Analysis');
-        newOutline.worldConcept = extractSection(markdown, 'World Concept');
-        newOutline.plotSynopsis = extractSection(markdown, 'Plot Synopsis');
-    
-        const charactersText = extractSection(markdown, 'Characters');
-        const characterBlocks = charactersText.split(/\n---\n/);
-        newOutline.characters = characterBlocks.map(block => {
-            if (!block.trim()) return null;
-            const name = block.match(/###\s*(.*)/)?.[1]?.trim();
-            if (!name) return null;
-    
-            const profile: CharacterProfile = {
-                name,
-                role: extractListItem(block, 'Role'),
-                coreConcept: extractListItem(block, 'Core Concept'),
-                immediateGoal: extractListItem(block, 'Immediate Goal'),
-                longTermAmbition: extractListItem(block, 'Long-Term Ambition'),
-                hiddenBurden: extractListItem(block, 'Hidden Burden'),
-                storyFunction: extractListItem(block, 'Story Function'),
-                definingObject: '', physicalAppearance: '', behavioralQuirks: '', speechPattern: '', originFragment: '', whatTheyRisk: '', keyRelationship: '', mainAntagonist: '', potentialChange: ''
-            };
-            return profile;
-        }).filter((p): p is CharacterProfile => p !== null && p.name !== '' && p.coreConcept !== '');
-    
-        const worldbookText = extractSection(markdown, 'Worldbook');
-        const categoryBlocks = worldbookText.split(/\n---\n/);
-        newOutline.worldCategories = categoryBlocks.map(block => {
-            if (!block.trim()) return null;
-            const lines = block.trim().split('\n');
-            const nameMatch = lines[0].match(/###\s*(.*)/);
-            if (!nameMatch) return null;
-            const name = nameMatch[1].trim();
-            const entries: WorldEntry[] = lines.slice(1).map(line => {
-                const entryMatch = line.match(/- \*\*(.*?)\*\*:\s*(.*)/);
-                if (!entryMatch) return null;
-                return { key: entryMatch[1].trim(), value: entryMatch[2].trim() };
-            }).filter((e): e is WorldEntry => e !== null);
-            return { name, entries };
-        }).filter((c): c is WorldCategory => c !== null && c.name !== '' && c.entries.length > 0);
+        let parsedData: any;
+        try {
+            parsedData = JSON.parse(jsonString);
+        } catch (e: any) {
+            console.error("JSON解析错误:", e, "原始字符串:", jsonString);
+            throw new Error(`JSON解析失败：AI返回的文本不是一个有效的JSON格式。错误: ${e.message}`);
+        }
         
-        newOutline.writingMethodology = DEFAULT_WRITING_METHODOLOGY;
-        newOutline.antiPatternGuide = DEFAULT_ANTI_PATTERN_GUIDE;
-        
+        const newOutline: Partial<StoryOutline> = {
+            title: parsedData.title || '无标题',
+            genreAnalysis: parsedData.genreAnalysis || '',
+            worldConcept: parsedData.worldConcept || '',
+            plotSynopsis: parsedData.plotSynopsis || '',
+            characters: parsedData.characters || [],
+            worldCategories: parsedData.worldCategories || [],
+            writingMethodology: DEFAULT_WRITING_METHODOLOGY,
+            antiPatternGuide: DEFAULT_ANTI_PATTERN_GUIDE,
+        };
+    
         if (!newOutline.plotSynopsis || !newOutline.characters || newOutline.characters.length === 0 || !newOutline.worldCategories || newOutline.worldCategories.length === 0) {
-            console.error('解析失败详情:', {
+            console.error('JSON验证失败详情:', {
                 plot: !!newOutline.plotSynopsis,
                 chars: newOutline.characters?.length,
                 world: newOutline.worldCategories?.length,
+                parsedData: parsedData,
             });
-            throw new Error("Markdown解析失败：未能从AI的输出中提取出必要的结构（剧情大纲、角色、世界书）。请检查AI模型的输出是否遵循了指定的格式。");
+            throw new Error("JSON验证失败：AI生成的JSON中缺少必要的结构（剧情大纲、角色、世界书）。");
         }
-
-        addLog("创作简报解析成功。", 'success');
+    
+        addLog("JSON创作简报解析并验证成功。", 'success');
         return newOutline as StoryOutline;
     };
 
@@ -500,36 +470,13 @@ const App: React.FC = () => {
             const searchResponse = await performSearch(coreToUse, storyOptions, ac.signal);
             const fullResponseText = searchResponse.text;
 
-            const separator = "### 第二部分：创作简报输出 (MANDATORY BRIEF OUTPUT)";
-            const separatorIndex = fullResponseText.indexOf(separator);
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: fullResponseText, citations: searchResponse.citations } : s));
 
-            let thoughtProcessText = fullResponseText;
-            let markdownBriefText = "";
-
-            if (separatorIndex !== -1) {
-                thoughtProcessText = fullResponseText.substring(0, separatorIndex).trim();
-                markdownBriefText = fullResponseText.substring(separatorIndex + separator.length).trim();
-            } else {
-                addLog("警告：AI输出中未找到标准分割符。尝试备用解析方法。", 'info');
-                const titleIndex = fullResponseText.indexOf("# Title:");
-                if (titleIndex !== -1) {
-                    thoughtProcessText = fullResponseText.substring(0, titleIndex).trim();
-                    markdownBriefText = fullResponseText.substring(titleIndex).trim();
-                } else {
-                     // If all fails, assume the whole thing is the brief and there's no thought process
-                    markdownBriefText = fullResponseText;
-                    thoughtProcessText = "AI未能按预期格式提供详细的思考过程。";
-                    addLog("备用解析失败。将整个输出视为创作简报。", 'info');
-                }
-            }
-
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: thoughtProcessText, citations: searchResponse.citations } : s));
-
-            if (!markdownBriefText) {
-                throw new Error("AI完成了思考过程，但未能生成最终的创作简报。请重试。");
+            if (!fullResponseText) {
+                throw new Error("AI未能生成创作简报。请重试。");
             }
             
-            const finalOutline = parseResearchToOutline(markdownBriefText);
+            const finalOutline = parseAndValidateOutlineJSON(fullResponseText);
             await handlePlanningSuccess(finalOutline);
 
         } catch (e: any) {
@@ -742,6 +689,22 @@ const App: React.FC = () => {
 
     const renderThoughtStepContent = (step: ThoughtStep) => {
         if (!step.content) return null;
+        // Check if content is likely JSON
+        if (step.content.trim().startsWith('{')) {
+            try {
+                const jsonObj = JSON.parse(step.content);
+                return (
+                    <div className="p-3 bg-slate-800/30 rounded-lg text-sm text-slate-400">
+                        <h4 className="font-semibold text-slate-200 mb-2">AI生成的创作简报 (JSON):</h4>
+                        <pre className="whitespace-pre-wrap text-xs max-h-96 overflow-auto">
+                            {JSON.stringify(jsonObj, null, 2)}
+                        </pre>
+                    </div>
+                );
+            } catch (e) {
+                // Not valid JSON, fall through to render as text
+            }
+        }
         return <ThoughtProcessVisualizer text={step.content} refineCallback={handleRefineFromSuggestion} />;
     };
     
