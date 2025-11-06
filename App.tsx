@@ -531,7 +531,7 @@ const App: React.FC = () => {
 
             } else if (thoughtStartIndex !== -1) {
                 // Only thought process was generated
-                finalThought = fullText.substring(thoughtStartIndex + thoughtStartMarker.length).trim();
+                finalThought = fullText.substring(thoughtStartMarker.length).trim();
                 setError("错误: AI在完成思考过程后停止了，未能生成正文。请尝试【重新生成】。");
                 addLog("章节生成失败: AI仅生成了思考过程。", 'error');
                 finalContent = "";
@@ -1008,6 +1008,7 @@ const App: React.FC = () => {
                            <WorldbookEditor 
                                 storyOutline={storyOutline}
                                 onUpdate={updateStoryOutline}
+                                storyOptions={storyOptions}
                            />
                         )}
                         {activeTab === 'characters' && storyOutline && (

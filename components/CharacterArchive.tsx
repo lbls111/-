@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { CharacterProfile, StoryOutline, StoryOptions, CustomField } from '../types';
-import { generateCharacterInteractionStream, generateNewCharacterProfile } from '../services/geminiService';
+import { generateCharacterInteractionStream, generateNewCharacterProfile, generateCharacterArcSuggestions } from '../services/geminiService';
 import LoadingSpinner from './icons/LoadingSpinner';
 import UsersRoundIcon from './icons/UsersRoundIcon';
 import PlusCircleIcon from './icons/PlusCircleIcon';
@@ -58,6 +58,51 @@ const CharacterEditField: React.FC<{
         )}
     </div>
 );
+
+// New component for AI suggestions
+const AISuggestionBlock: React.FC<{
+    character: CharacterProfile;
+    storyOutline: StoryOutline;
+    storyOptions: StoryOptions;
+}> = ({ character, storyOutline, storyOptions }) => {
+    const [isLoading, setIsLoading] = useState(false);
+    const [suggestion, setSuggestion] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleGetSuggestion = async () => {
+        setIsLoading(true);
+        setSuggestion(null);
+        setError(null);
+        try {
+            const response = await generateCharacterArcSuggestions(character, storyOutline, storyOptions);
+            setSuggestion(response.text);
+        } catch (e: any) {
+            setError(e.message || "获取建议时发生未知错误。");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="col-span-full mt-4 pt-4 border-t border-slate-700/50">
+            <button
+                onClick={handleGetSuggestion}
+                disabled={isLoading}
+                className="w-full flex items-center justify-center px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-500 transition-colors shadow-md disabled:bg-slate-600"
+            >
+                {isLoading ? <LoadingSpinner className="w-5 h-5 mr-2" /> : <SparklesIcon className="w-5 h-5 mr-2" />}
+                {isLoading ? '正在分析角色...' : 'AI 深化角色 (动机与弧光)'}
+            </button>
+            {suggestion && (
+                <div className="mt-3 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
+                    <h4 className="font-bold text-indigo-300 mb-2">AI 角色深化建议</h4>
+                    <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: suggestion.replace(/\n/g, '<br />').replace(/###\s(.*?)(<br \/>)/g, '<h5 class="font-bold text-indigo-400 mt-2">$1</h5>') }} />
+                </div>
+            )}
+            {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        </div>
+    );
+};
 
 
 const CharacterArchive: React.FC<CharacterArchiveProps> = ({ storyOutline, onUpdate, storyOptions }) => {
@@ -372,6 +417,11 @@ const CharacterArchive: React.FC<CharacterArchiveProps> = ({ storyOutline, onUpd
                            ))}
                         </div>
                     )}
+                    <AISuggestionBlock
+                        character={char}
+                        storyOutline={storyOutline}
+                        storyOptions={storyOptions}
+                    />
                 </div>
             </details>
         )}

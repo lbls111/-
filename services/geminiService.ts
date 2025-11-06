@@ -177,3 +177,31 @@ export const generateNewCharacterProfile = async (
         payload: { storyOutline, characterPrompt, options }
     });
 };
+
+// --- NEW CREATIVE TOOL SERVICES ---
+
+export const generateWorldbookSuggestions = async (storyOutline: StoryOutline, options: StoryOptions): Promise<{ text: string }> => {
+    return postFetch<{ text: string }>('/api', {
+        action: 'getWorldbookSuggestions',
+        payload: { storyOutline, options }
+    });
+};
+
+export const generateCharacterArcSuggestions = async (character: CharacterProfile, storyOutline: StoryOutline, options: StoryOptions): Promise<{ text: string }> => {
+    return postFetch<{ text: string }>('/api', {
+        action: 'getCharacterArcSuggestions',
+        payload: { character, storyOutline, options }
+    });
+};
+
+export const generateNarrativeToolboxSuggestions = async (
+    tool: 'iceberg' | 'conflict',
+    detailedOutline: DetailedOutlineAnalysis,
+    storyOutline: StoryOutline,
+    options: StoryOptions
+): Promise<{ text: string }> => {
+    return postFetch<{ text: string }>('/api', {
+        action: 'getNarrativeToolboxSuggestions',
+        payload: { tool, detailedOutline, storyOutline, options }
+    });
+};

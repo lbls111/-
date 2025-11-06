@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import type { StoryOutline, WorldEntry, WorldCategory } from '../types';
+import type { StoryOutline, WorldEntry, WorldCategory, StoryOptions } from '../types';
 import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
 import PlusCircleIcon from './icons/PlusCircleIcon';
+import SparklesIcon from './icons/SparklesIcon';
+import LoadingSpinner from './icons/LoadingSpinner';
+import { generateWorldbookSuggestions } from '../services/geminiService';
 
 interface WorldbookEditorProps {
     storyOutline: StoryOutline;
     onUpdate: (updates: Partial<StoryOutline>) => void;
+    storyOptions: StoryOptions; // Added for API call
 }
 
-const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdate }) => {
+const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdate, storyOptions }) => {
     const [categories, setCategories] = useState<WorldCategory[]>(storyOutline.worldCategories || []);
     
     // State for adding new entries
@@ -28,6 +32,12 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
     // State for editing synopsis
     const [isEditingSynopsis, setIsEditingSynopsis] = useState(false);
     const [editedSynopsis, setEditedSynopsis] = useState(storyOutline.plotSynopsis);
+
+    // State for AI suggestions
+    const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+    const [suggestions, setSuggestions] = useState<string | null>(null);
+    const [suggestionError, setSuggestionError] = useState<string | null>(null);
+
 
     const handleUpdateCategories = (newCategories: WorldCategory[]) => {
         setCategories(newCategories);
@@ -86,6 +96,21 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
         onUpdate({ plotSynopsis: editedSynopsis });
         setIsEditingSynopsis(false);
     };
+    
+    const handleGetSuggestions = async () => {
+        setIsGeneratingSuggestions(true);
+        setSuggestions(null);
+        setSuggestionError(null);
+        try {
+            const response = await generateWorldbookSuggestions(storyOutline, storyOptions);
+            setSuggestions(response.text);
+        } catch (e: any) {
+            setSuggestionError(e.message || "获取建议失败。");
+        } finally {
+            setIsGeneratingSuggestions(false);
+        }
+    };
+
 
     return (
         <div className="glass-card p-6 rounded-lg space-y-6">
@@ -123,7 +148,22 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
             </div>
             
             <div className="border-t border-white/10 pt-4 space-y-4">
-                <h3 className="text-lg font-semibold text-sky-300 mb-2">世界观条目</h3>
+                <div className="flex justify-between items-center mb-2">
+                    <h3 className="text-lg font-semibold text-sky-300">世界观条目</h3>
+                    <button onClick={handleGetSuggestions} disabled={isGeneratingSuggestions} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                        {isGeneratingSuggestions ? <LoadingSpinner className="w-3.5 h-3.5"/> : <SparklesIcon className="w-3.5 h-3.5"/>}
+                        <span>{isGeneratingSuggestions ? "思考中..." : "AI 深化建议"}</span>
+                    </button>
+                </div>
+                
+                {suggestions && (
+                    <div className="p-4 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
+                        <h4 className="font-bold text-indigo-300 mb-2">AI 创意启发</h4>
+                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: suggestions.replace(/\n/g, '<br />') }} />
+                    </div>
+                )}
+                {suggestionError && <p className="text-sm text-red-400 bg-red-900/30 p-2 rounded-md">{suggestionError}</p>}
+                
                 {categories.map((category, catIndex) => (
                     <details key={catIndex} className="bg-slate-950/40 rounded-lg border border-slate-700/50" open>
                         <summary className="p-3 cursor-pointer font-semibold text-slate-200 flex justify-between items-center">

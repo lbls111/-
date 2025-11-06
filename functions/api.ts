@@ -8,6 +8,9 @@ import {
   getEditChapterTextPrompts,
   getCharacterInteractionPrompts,
   getNewCharacterProfilePrompts,
+  getWorldbookSuggestionsPrompts,
+  getCharacterArcSuggestionsPrompts,
+  getNarrativeToolboxPrompts,
 } from './prompts';
 
 import type { StoryOptions, Citation, OutlineGenerationProgress } from '../types';
@@ -135,6 +138,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         switch (action) {
             case 'performSearch': case 'generateStoryOutline': case 'generateChapterTitles': 
             case 'editChapterText': case 'generateNewCharacterProfile':
+            case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions': case 'getNarrativeToolboxSuggestions':
                 isStreaming = false; break;
             case 'generateChapter': case 'generateCharacterInteraction': case 'generateDetailedOutline': 
             case 'refineDetailedOutline':
@@ -152,6 +156,9 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'editChapterText': model = options.writingModel; prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options); break;
             case 'generateCharacterInteraction': model = options.planningModel; prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options); break;
             case 'generateNewCharacterProfile': model = options.planningModel; prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options); break;
+            case 'getWorldbookSuggestions': model = options.planningModel; prompt = getWorldbookSuggestionsPrompts(restPayload.storyOutline, options); break;
+            case 'getCharacterArcSuggestions': model = options.planningModel; prompt = getCharacterArcSuggestionsPrompts(restPayload.character, restPayload.storyOutline, options); break;
+            case 'getNarrativeToolboxSuggestions': model = options.planningModel; prompt = getNarrativeToolboxPrompts(restPayload.tool, restPayload.detailedOutline, restPayload.storyOutline, options); break;
         }
 
         if (!model) throw new Error(`No model selected for action: ${action}. Please check your settings.`);

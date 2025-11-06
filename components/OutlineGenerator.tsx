@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis, OutlineGenerationProgress } from '../types';
-import { generateChapterTitles, generateDetailedOutlineStream, refineDetailedOutlineStream } from '../services/geminiService';
+import { generateChapterTitles, generateDetailedOutlineStream, refineDetailedOutlineStream, generateNarrativeToolboxSuggestions } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 import SendIcon from './icons/SendIcon';
@@ -199,6 +199,10 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     // State for copy functionality
     const [isCopied, setIsCopied] = useState(false);
 
+    // State for Narrative Toolbox
+    const [isToolboxLoading, setIsToolboxLoading] = useState(false);
+    const [toolboxResult, setToolboxResult] = useState<string | null>(null);
+    const [toolboxError, setToolboxError] = useState<string | null>(null);
 
     const handleGenerateTitles = async () => {
         setIsLoadingTitles(true);
@@ -325,6 +329,28 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         });
     };
 
+    const handleToolboxRequest = async (tool: 'iceberg' | 'conflict') => {
+        if (!parsedOutline) {
+            setToolboxError("无法使用工具，需要先生成一个有效的细纲。");
+            return;
+        }
+        setIsToolboxLoading(true);
+        setToolboxResult(null);
+        setToolboxError(null);
+        try {
+            const detailedOutline: DetailedOutlineAnalysis = {
+                plotPoints: parsedOutline.plotPoints,
+                nextChapterPreview: parsedOutline.nextChapterPreview,
+            };
+            const response = await generateNarrativeToolboxSuggestions(tool, detailedOutline, storyOutline, storyOptions);
+            setToolboxResult(response.text);
+        } catch (e: any) {
+            setToolboxError(e.message || "获取建议时发生未知错误。");
+        } finally {
+            setIsToolboxLoading(false);
+        }
+    };
+
 
     const nextChapterStart = chapters.length + 1;
 
@@ -332,7 +358,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         <div className="glass-card p-6 rounded-lg space-y-6">
             <div>
                 <h2 className="text-2xl font-bold text-slate-100">章节细纲分析器</h2>
-                <p className="text-slate-400 mt-1 text-sm">此模块采用【创作-评估-优化】迭代循环。AI将持续优化细纲，直至评估分数达到您设定的目标或达到迭代上限，确保交付高质量的创作蓝图。</p>
+                <p className="text-slate-400 mt-1 text-sm">此模块采用【创作-评估-优化】迭代循环。AI将扮演一个颠覆性的叙事架构师，遵循**“反套路创新”与“读者爽感”**双重核心。在确保逻辑自洽与深度布局的同时，它将**精准注入高密度、强反馈的情绪爽点**，持续优化直至评估达标，交付兼具市场潜力与艺术深度的创作蓝图。</p>
             </div>
             
             <div className="border-t border-white/10 pt-4">
@@ -540,6 +566,28 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                     </button>
                                 </div>
                              </form>
+
+                             {/* NEW: Narrative Toolbox */}
+                            <div className="p-4 bg-slate-900/50 rounded-lg space-y-3">
+                                <h4 className="text-sm font-medium text-slate-300">AI 叙事工具箱</h4>
+                                <div className="flex flex-wrap gap-2">
+                                    <button onClick={() => handleToolboxRequest('iceberg')} disabled={isToolboxLoading} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                                        {isToolboxLoading ? <LoadingSpinner className="w-3.5 h-3.5"/> : <SparklesIcon className="w-3.5 h-3.5"/>}
+                                        <span>建议信息载体 (冰山法则)</span>
+                                    </button>
+                                    <button onClick={() => handleToolboxRequest('conflict')} disabled={isToolboxLoading} className="flex items-center gap-x-2 px-3 py-1.5 text-xs rounded-md bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                                        {isToolboxLoading ? <LoadingSpinner className="w-3.5 h-3.5"/> : <SparklesIcon className="w-3.5 h-3.5"/>}
+                                        <span>构思规则冲突</span>
+                                    </button>
+                                </div>
+                                {toolboxResult && (
+                                    <div className="mt-3 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
+                                        <h5 className="font-bold text-indigo-300 mb-2">AI 创意启发</h5>
+                                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: toolboxResult.replace(/\n/g, '<br />').replace(/\*\s(.*?):/g, '<strong class="text-indigo-400">$1:</strong>') }} />
+                                    </div>
+                                )}
+                                {toolboxError && <p className="mt-2 text-xs text-red-400">{toolboxError}</p>}
+                            </div>
                         </div>
                     )}
                 </div>
