@@ -159,7 +159,7 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
                 {suggestions && (
                     <div className="p-4 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
                         <h4 className="font-bold text-indigo-300 mb-2">AI 创意启发</h4>
-                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: suggestions.replace(/\n/g, '<br />') }} />
+                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: suggestions.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-400">$1</strong>') }} />
                     </div>
                 )}
                 {suggestionError && <p className="text-sm text-red-400 bg-red-900/30 p-2 rounded-md">{suggestionError}</p>}

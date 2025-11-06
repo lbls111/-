@@ -583,7 +583,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                 {toolboxResult && (
                                     <div className="mt-3 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
                                         <h5 className="font-bold text-indigo-300 mb-2">AI 创意启发</h5>
-                                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: toolboxResult.replace(/\n/g, '<br />').replace(/\*\s(.*?):/g, '<strong class="text-indigo-400">$1:</strong>') }} />
+                                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: toolboxResult.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-400">$1</strong>') }} />
                                     </div>
                                 )}
                                 {toolboxError && <p className="mt-2 text-xs text-red-400">{toolboxError}</p>}
