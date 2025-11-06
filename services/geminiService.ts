@@ -1,5 +1,5 @@
 import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique } from '../types';
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique, OutlineGenerationProgress } from '../types';
 
 // Helper for streaming responses from our backend
 async function* streamFetch(endpoint: string, body: any, signal?: AbortSignal): AsyncGenerator<any, void, undefined> {
@@ -105,7 +105,8 @@ export const generateChapterTitles = async (
     return titles;
 };
 
-export const generateSingleOutlineIteration = async (
+// FIX: Corrected the return type to a union that includes the possible error object.
+export const generateSingleOutlineIterationStream = (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     chapterTitle: string,
@@ -113,8 +114,8 @@ export const generateSingleOutlineIteration = async (
     previousAttempt: { outline: DetailedOutlineAnalysis, critique: OutlineCritique } | null,
     userInput: string,
     signal?: AbortSignal
-): Promise<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }> => {
-    return postFetch<{ critique: OutlineCritique; outline: DetailedOutlineAnalysis; }>('/api', {
+): AsyncGenerator<OutlineGenerationProgress | { error: string }, void, undefined> => {
+    return streamFetch('/api', {
         action: 'generateSingleOutlineIteration',
         payload: { outline, chapters, chapterTitle, options, previousAttempt, userInput }
     }, signal);
@@ -175,7 +176,6 @@ export const generateCharacterArcSuggestions = async (character: CharacterProfil
 };
 
 export const generateNarrativeToolboxSuggestions = async (
-    tool: 'iceberg' | 'conflict',
     detailedOutline: DetailedOutlineAnalysis,
     storyOutline: StoryOutline,
     options: StoryOptions,
@@ -183,6 +183,6 @@ export const generateNarrativeToolboxSuggestions = async (
 ): Promise<{ text: string }> => {
     return postFetch<{ text: string }>('/api', {
         action: 'getNarrativeToolboxSuggestions',
-        payload: { tool, detailedOutline, storyOutline, options }
+        payload: { detailedOutline, storyOutline, options }
     }, signal);
 };

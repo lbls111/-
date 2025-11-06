@@ -25,6 +25,7 @@ import ClipboardListIcon from './components/icons/ClipboardListIcon';
 import LogViewer from './components/LogViewer';
 import ThoughtProcessVisualizer from './components/ThoughtProcessVisualizer';
 import StopCircleIcon from './components/icons/StopCircleIcon';
+import GenerationProgressModal from './components/GenerationProgressModal';
 
 
 const storyStyles = {
@@ -239,6 +240,10 @@ const App: React.FC = () => {
     
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
+    
+    // New state for outline generation progress
+    const [isOutlineGenerating, setIsOutlineGenerating] = useState(false);
+    const [outlineGenerationProgress, setOutlineGenerationProgress] = useState<OutlineGenerationProgress | null>(null);
 
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
@@ -337,6 +342,9 @@ const App: React.FC = () => {
                 if (prev === GameState.WRITING) return GameState.CHAPTER_COMPLETE;
                 return prev;
             });
+            // Also ensure any modal process is stopped
+            setIsOutlineGenerating(false);
+            setOutlineGenerationProgress(null);
             return;
         }
 
@@ -1000,7 +1008,7 @@ const App: React.FC = () => {
             </button>
         );
 
-        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing;
+        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing || isOutlineGenerating;
 
         return (
             <div className="h-screen flex flex-col">
@@ -1139,6 +1147,10 @@ const App: React.FC = () => {
                                 storyOptions={storyOptions}
                                 activeOutlineTitle={activeOutlineTitle}
                                 setActiveOutlineTitle={setActiveOutlineTitle}
+                                isGenerating={isOutlineGenerating}
+                                setIsGenerating={setIsOutlineGenerating}
+                                setProgress={setOutlineGenerationProgress}
+                                setController={setAbortController}
                              />
                         )}
                         {activeTab === 'writing' && (
@@ -1281,6 +1293,11 @@ const App: React.FC = () => {
                 onClose={() => setIsLogViewerOpen(false)}
                 logs={logs}
                 onClear={handleClearLogs}
+            />
+            <GenerationProgressModal
+                isOpen={isOutlineGenerating}
+                progress={outlineGenerationProgress}
+                onAbort={handleAbort}
             />
             {gameState === GameState.INITIAL || (gameState === GameState.ERROR && !storyOutline) ? renderInitialView() : renderAgentWorkspace()}
         </div>

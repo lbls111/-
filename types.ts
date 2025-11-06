@@ -138,6 +138,7 @@ export interface PlotPointAnalysis {
   emotionAndInteraction: string;
   pacingControl: string;
   worldviewGlimpse?: string; // NEW: A subtle reveal of world-building information.
+  emotionalPayoff: string; // NEW: The core emotional value delivered to the reader.
 }
 
 export interface NextChapterPreview {
@@ -184,12 +185,14 @@ export interface FinalDetailedOutline extends DetailedOutlineAnalysis {
 
 // FIX: Added missing OutlineGenerationProgress type.
 export interface OutlineGenerationProgress {
-  status: 'refining' | 'critiquing' | 'error';
+  status: 'refining' | 'critiquing' | 'error' | 'complete';
   version: number;
-  maxVersions: number;
+  maxVersions: number; // For now, we can hardcode this or make it configurable
   score: number;
   message: string;
+  finalOutline?: FinalDetailedOutline; // The final result
 }
+
 
 // New type for the logging system
 export interface LogEntry {
