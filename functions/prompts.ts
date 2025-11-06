@@ -160,7 +160,9 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
 你的任务是根据故事大纲和已有的章节，为后续的10个章节生成标题。
 你的输出必须是一个JSON数组的字符串形式，例如： \`["标题一", "标题二", ...]\`。
 不要添加任何额外的解释或markdown标记。`;
-    const user = `故事大纲: ${outline.plotSynopsis}
+    const user = `**重要提示**: 以下故事大纲是包含用户所有手动编辑的最新版本。在创作时请严格以此为准。
+
+故事大纲: ${outline.plotSynopsis}
 已有章节数量: ${chapters.length}
 仿写作者风格: ${options.authorStyle}
 
@@ -199,7 +201,6 @@ const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v3
 *   **核心**: 世界观不是用来“讲”的，而是用来“渗透”的。在情节中只揭示冰山一角，让读者通过细节自行推导全貌。
 *   **执行指令**:
     1.  **世界观一瞥**: 在细纲的每个关键\`plotPoint\`中，必须包含一个\`worldviewGlimpse\`字段。此字段应描述一个与当前情节相关的、微小的世界观细节（如“他注意到，守卫铠甲上的徽记，与传说中‘堕落王朝’的标志惊人地相似”）。
-    // FIX: Removed template literal interpolation `${worldviewGlimpse}` which was causing a compile error because the variable is not defined. It should be a literal string.
     2.  **保持神秘**: \`worldviewGlimpse\`只描述现象，绝不解释其背后的原因和历史，将悬念和解读空间留给读者。
 
 **第五法则：读者爽感至上原则 (Principle of Reader Satisfaction)**
@@ -258,6 +259,7 @@ export const getSingleOutlineIterationPrompts = (
 ): { role: string; content: string; }[] => {
     
     let userContext = `### 故事信息
+**重要提示**: 以下世界观和角色档案是包含用户所有手动编辑的最新版本。在创作时请严格以此为准。
 *   **总大纲**: ${outline.plotSynopsis}
 *   **世界观**: ${stringifyWorldbook(outline.worldCategories)}
 *   **主要角色**: ${stringifyCharacters(outline.characters)}
@@ -319,6 +321,7 @@ export const getChapterPrompts = (outline: StoryOutline, historyChapters: Genera
 
     const user = `
 ### **故事背景**
+**重要提示**: 以下世界观和角色档案是包含用户所有手动编辑的最新版本。在创作时请严格以此为准。
 *   **小说标题**: ${outline.title}
 *   **剧情总纲**: ${outline.plotSynopsis}
 *   **世界观核心**: ${stringifyWorldbook(outline.worldCategories)}
@@ -366,6 +369,7 @@ export const getCharacterInteractionPrompts = (char1: CharacterProfile, char2: C
 - **简洁有力**: 场景不需要有完整的开头和结尾，它是一个探索角色可能性的“化学实验”。
 - **直接输出**: 不要添加任何解释，直接开始写场景。`;
     const user = `### 场景要求
+**重要提示**: 以下故事背景是包含用户所有手动编辑的最新版本。
 *   **参与角色1**: ${char1.name} - ${char1.coreConcept}
 *   **参与角色2**: ${char2.name} - ${char2.coreConcept}
 *   **故事背景**: ${outline.plotSynopsis}
@@ -378,6 +382,7 @@ export const getNewCharacterProfilePrompts = (storyOutline: StoryOutline, charac
     const system = `你是一个角色设计师。你的任务是根据用户提供的简单概念，设计一个完整、深刻、符合故事大纲的角色，并以一个严格的JSON对象格式输出。
 不要添加任何额外的解释，只输出JSON。`;
     const user = `### 故事背景
+**重要提示**: 以下故事背景和已有角色列表是包含用户所有手动编辑的最新版本。
 *   **剧情总纲**: ${storyOutline.plotSynopsis}
 *   **已有角色**: ${storyOutline.characters.map(c => c.name).join('、 ')}
 
@@ -429,7 +434,7 @@ export const getWorldbookSuggestionsPrompts = (storyOutline: StoryOutline, optio
 
     const user = `### 任务：分析并深化世界观
 
-以下是当前的世界观设定和故事梗概，请为其提供3-5个具体的、题材中立的深化方向。
+**重要提示**: 以下设定是包含用户所有手动编辑的最新版本。你的建议必须基于此最新信息。
 
 **故事梗概**: 
 ${storyOutline.plotSynopsis}
@@ -471,7 +476,7 @@ export const getCharacterArcSuggestionsPrompts = (character: CharacterProfile, s
 
     const user = `### 任务：深化角色内在逻辑
 
-请为以下角色设计其“隐性动机”和“角色弧光”。
+**重要提示**: 以下故事和角色信息是包含用户所有手动编辑的最新版本。你的建议必须基于此最新信息。
 
 **故事梗概**: 
 ${storyOutline.plotSynopsis}
@@ -526,6 +531,8 @@ export const getNarrativeToolboxPrompts = (tool: 'iceberg' | 'conflict', detaile
     };
 
     const user = `### 任务
+**重要提示**: 以下故事背景和细纲是包含用户所有手动编辑的最新版本。你的建议必须基于此最新信息。
+
 请使用以下工具对上述细纲进行分析，并提供具体的创意建议来**优化**它。
 
 ${toolPrompts[tool]}
