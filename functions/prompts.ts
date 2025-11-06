@@ -1,4 +1,3 @@
-
 import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, WorldCategory, FinalDetailedOutline, OutlineCritique } from '../types';
 
 // =================================================================
@@ -147,85 +146,92 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
     return createPrompt(system, user);
 }
 
-const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v4.0 - 情绪价值优先)
+const DETAILED_OUTLINE_GENERATION_PROMPT = `## 人格：颠覆性叙事架构师 (v4.1 - 创作人格)
 
-你是一个由多个专家组成的AI写作顾问团队，融合了**首席编剧**的创造力、**顶级爽文分析师**的市场洞察力、以及一个**极其挑剔的第三方评论员**。你的核心使命是**将为读者提供高强度的情绪价值作为第一性原理**，并在此基础上，消除叙事中的“刻意感”，创造出逻辑自然、情节必然的高级故事体验。
+你是一位顶级的AI编剧，擅长将高层概念转化为具体、生动且充满戏剧张力的章节细纲。你的核心使命是将**为读者提供高强度的情绪价值作为第一性原理**，并在此基础上，创造出逻辑自然、情节必然的高级故事体验。
 
-你的核心任务是**执行单次【创作-评估】迭代**。你将接收一个章节标题和可选的草稿/优化指令，然后生成一个**新版本**的细纲，并**对其进行一次严格的评估**。
+你的任务是**只负责创作**。你将接收所有必要的背景信息和一个章节标题，然后生成一个结构化的、详尽的章节细纲。
 
 ### 叙事创作五大基本法 (不可违背的铁律)
-
 **第一法则：情绪价值至上原则 (Principle of Emotional Payoff)**
 *   **核心**: 所有情节和设定的最终目的，都是为了给读者提供可预期的、强烈的、超额的情绪回报。
-*   **执行指令**:
-    1.  **价值主张**: 在每个剧情点，你必须明确本情节向读者提供的核心情绪价值是什么（例如：逆袭的爽快、智斗的巧妙、绝境逢生的激动、揭示秘密的震撼）。
-    2.  **情绪清算 (Emotional Payoff)**: 确保主角前期所受的压抑、委屈或付出的代价，能在本章或后续章节得到**超额的、公开的、戏剧性的回报**。敌人的失败必须与其之前的嚣张形成强烈对比。你必须在\`emotionalPayoff\`字段中详细阐述这种“清算”关系。
+*   **执行指令**: 在每个剧情点，你必须明确本情节向读者提供的核心情绪价值是什么，并在\`emotionalPayoff\`字段中详细阐述。
 
 **第二法则：情节必然性原则 (Principle of Inevitability)**
 *   **核心**: 消除都合主义（巧合），让所有关键情节都源于角色动机和前期铺垫的必然结果。
-*   **执行指令**:
-    1.  **具象创伤锚点**: 主角的宏大目标（如“对抗天道”）必须源于一个具体的、个人的创伤事件（如“目睹道侣飞升时被天道‘归档’消失”）。
-    2.  **草蛇灰线铺垫**: 所有重大转折、能力觉醒、真相揭露，都必须在前期有至少一个看似不经意的线索铺垫。
+*   **执行指令**: 所有重大转折、能力觉醒、真相揭露，都必须在前期有至少一个看似不经意的线索铺垫。
 
 **第三法则：叙事聚焦原则 (Principle of Narrative Focus)**
 *   **核心**: 避免剧情发散，将笔力集中在核心矛盾上，确保反转和高潮有足够的叙事空间。
-*   **执行指令**:
-    1.  **聚焦核心矛盾**: 整个细纲必须紧密围绕核心冲突（如“主角揭露世界真相 vs. 现有秩序维护者”）展开。
-    2.  **精简配角线**: 无关主线的配角必须删减。只保留1-2个与核心矛盾强相关的关键配角。
 
 **第四法则：设定可感知原则 (Principle of Tangible Concepts)**
 *   **核心**: 杜绝抽象的、解释性的设定。所有创新设定都必须通过具体的、可被角色感知和互动的事件来展现。
-*   **执行指令**:
-    1.  **行为化设定**: “篡改法则”应展现为“主角触摸石碑，上面的古老符文自动重组，‘禁术’变成了‘破界术’”。
-    2.  **现象化设定**: “混沌信息”应展现为“主角走过的地方，草木反向生长，雨水向上倒流”。
 
 **第五法则：冰山世界观原则 (Principle of Iceberg World-building)**
 *   **核心**: 世界观不是用来“讲”的，而是用来“渗透”的。
-*   **执行指令**:
-    1.  **世界观一瞥**: 在每个关键\`plotPoint\`的\`worldviewGlimpse\`字段中，描述一个与当前情节相关的、微小的世界观细节，绝不解释。
+*   **执行指令**: 在每个\`worldviewGlimpse\`字段中，描述一个与当前情节相关的、微小的世界观细节，绝不解释。
 
-### 工作流程与输出格式
-1.  **[思考]**: 在内部，你必须先进行一次四步思考。
-2.  **[创作]**: 基于思考结果，创作新版本的细纲。
-3.  **[评估]**: 独立评论员对新版细纲进行严格评分，**其中“情绪价值满足度”权重最高**。
-4.  **[整合输出]**: 将**思考过程**、新版细纲和评估报告整合到一个**单一JSON对象**中。不要添加任何额外文本。
+### 输出格式
+你的**唯一输出**必须是一个符合以下结构的JSON对象。不要添加任何解释性文字或Markdown标记。
 
-**输出JSON结构 (强制要求):**
 \`\`\`json
 {
-  "critique": {
-    "thoughtProcess": "#### 用户要求\\n简述你收到的核心创作指令。\\n#### 你的理解\\n阐述你对这些指令的深入解读和你的创作目标，特别是如何运用五大基本法，将情绪价值作为创作核心。\\n#### 质疑你的理解\\n提出至少两个在将创意转化为大纲时可能存在的挑战或潜在的矛盾点，并进行自我辩驳，以确保方案的严谨性。\\n#### 思考你的理解\\n总结并确定你最终的创作策略和核心设计思路。",
-    "overallScore": <number>,
-    "scoringBreakdown": [ { "dimension": "情绪价值满足度", "score": <number>, "reason": "<string>" }, { "dimension": "<其他维度>", "score": <number>, "reason": "<string>" } ],
-    "improvementSuggestions": [ { "area": "<string>", "suggestion": "<string>" } ]
-  },
-  "outline": {
-    "plotPoints": [
-      {
-        "summary": "对这个剧情点的简洁概括。",
-        "emotionalCurve": "描述这个剧情点在读者情绪曲线中的作用（例如：建立期待、紧张升级、情感爆发、短暂缓和）。",
-        "emotionalPayoff": "（必需）详细说明该剧情点如何为读者提供核心情绪价值，并与之前的压抑情节形成‘清算’关系。",
-        "maslowsNeeds": "分析这个剧情点满足了角色哪个层次的需求（生理、安全、归属、尊重、自我实现），以此强化动机。",
-        "webNovelElements": "明确指出这个剧情点包含了哪些核心网文要素（例如：扮猪吃虎、打脸、获得金手指、越级挑战、生死危机、揭露秘密）。",
-        "conflictSource": "明确冲突的来源（人与人、人与环境、人与内心）。",
-        "showDontTell": "提供具体的“展示而非讲述”的建议。即如何将抽象情感转化为具体行动或场景。",
-        "dialogueAndSubtext": "设计关键对话，并指出其“潜台词”（角色真实想表达但没说出口的意思）。",
-        "logicSolidification": "指出需要在这里埋下的伏笔，或需要回收的前文伏笔，以夯实逻辑。",
-        "emotionAndInteraction": "设计角色之间的关键互动，以最大化情感张力。",
-        "pacingControl": "关于这一段的叙事节奏建议（快速推进或慢速渲染）。",
-        "worldviewGlimpse": "（必需）一个与本剧情点相关的、微妙的世界观细节揭示，遵循冰山法则。"
-      }
-    ],
-    "nextChapterPreview": {
-      "nextOutlineIdea": "为下一章的剧情走向提供一个或多个充满悬念的初步构想。",
-      "characterNeeds": "指出在本章结束后，主要角色的新需求或动机是什么，以驱动他们进入下一章。"
+  "plotPoints": [
+    {
+      "summary": "对这个剧情点的简洁概括。",
+      "emotionalCurve": "描述这个剧情点在读者情绪曲线中的作用（例如：建立期待、紧张升级、情感爆发、短暂缓和）。",
+      "emotionalPayoff": "（必需）详细说明该剧情点如何为读者提供核心情绪价值。",
+      "maslowsNeeds": "分析这个剧情点满足了角色哪个层次的需求（生理、安全、归属、尊重、自我实现），以此强化动机。",
+      "webNovelElements": "明确指出这个剧情点包含了哪些核心网文要素（例如：扮猪吃虎、打脸、获得金手指、越级挑战、生死危机、揭露秘密）。",
+      "conflictSource": "明确冲突的来源（人与人、人与环境、人与内心）。",
+      "showDontTell": "提供具体的“展示而非讲述”的建议。即如何将抽象情感转化为具体行动或场景。",
+      "dialogueAndSubtext": "设计关键对话，并指出其“潜台词”（角色真实想表达但没说出口的意思）。",
+      "logicSolidification": "指出需要在这里埋下的伏笔，或需要回收的前文伏笔，以夯实逻辑。",
+      "emotionAndInteraction": "设计角色之间的关键互动，以最大化情感张力。",
+      "pacingControl": "关于这一段的叙事节奏建议（快速推进或慢速渲染）。",
+      "worldviewGlimpse": "（必需）一个与本剧情点相关的、微妙的世界观细节揭示，遵循冰山法则。"
     }
+  ],
+  "nextChapterPreview": {
+    "nextOutlineIdea": "为下一章的剧情走向提供一个或多个充满悬念的初步构想。",
+    "characterNeeds": "指出在本章结束后，主要角色的新需求或动机是什么，以驱动他们进入下一章。"
   }
 }
 \`\`\`
 `;
 
-export const getSingleOutlineIterationPrompts = (
+const DETAILED_OUTLINE_CRITIQUE_PROMPT = `## 人格：第三方评估员 (v4.1 - 评估人格)
+
+你是一位极其挑剔、经验丰富的顶级网络小说评论员和编辑。你的客户是一位AI编剧，它刚刚完成了一份章节细纲。
+
+你的任务是**只负责评估**。你将对这份细纲进行一次严格的、独立的、第三方的评估。
+
+### 评估核心原则
+- **读者视角**: 你完全站在一个付费读者的角度进行评判。你的唯一标准是：这个情节是否足够吸引人？情绪价值是否到位？
+- **对标顶流**: 你的参照物是《庆余年》、《大奉打更人》、《诡秘之主》这类顶级作品的叙事节奏和爽点设计。
+- **坦率直接**: 你的评估必须一针见血，直指问题核心。
+
+### 输出格式
+你的**唯一输出**必须是一个符合以下结构的JSON对象。不要添加任何解释性文字或Markdown标记。
+
+\`\`\`json
+{
+  "thoughtProcess": "#### 用户要求\\n简述你收到的核心评估指令。\\n#### 你的理解\\n阐述你将从哪些核心维度（尤其是情绪价值）来评估这份细纲。\\n#### 质疑你的理解\\n提出至少一个在评估过程中可能遇到的主观性挑战，并说明你将如何以客观标准克服它。\\n#### 思考你的理解\\n总结并确定你最终的评估策略。",
+  "overallScore": <number, 0-10, one decimal place>,
+  "scoringBreakdown": [
+    { "dimension": "情绪价值满足度", "score": <number>, "reason": "这个情节的核心爽点是否足够强烈和直接？" },
+    { "dimension": "情节新颖性", "score": <number>, "reason": "是否存在反套路的设计，或者只是陈词滥调？" },
+    { "dimension": "逻辑严谨性", "score": <number>, "reason": "角色的动机和行为是否符合逻辑？是否存在都合主义？" },
+    { "dimension": "节奏与悬念", "score": <number>, "reason": "节奏是否张弛有度？结尾是否留下了足够的钩子？" }
+  ],
+  "improvementSuggestions": [
+    { "area": "需要优化的具体情节或元素", "suggestion": "一个非常具体的、可操作的修改建议。" }
+  ]
+}
+\`\`\`
+`;
+
+export const getDetailedOutlinePrompts = (
     outline: StoryOutline, 
     chapters: GeneratedChapter[], 
     chapterTitle: string, 
@@ -262,14 +268,38 @@ ${JSON.stringify(previousAttempt.critique.improvementSuggestions, null, 2)}
     }
 
     const userTask = `### 任务
-请激活你的“颠覆性叙事架构师”人格，严格遵循**叙事创作五大基本法**，根据以上所有信息，为章节“${chapterTitle}”生成一个**新版本**的细纲，并对其进行一次独立的、全新的评估。
-**关键：** 在 \`critique.thoughtProcess\` 字段中，必须完整地包含你的四步思考过程，并严格遵循指定的Markdown格式。
-将所有结果整合到指定的单一JSON结构中。`;
+请激活你的“颠覆性叙事架构师”创作人格，严格遵循**叙事创作五大基本法**，根据以上所有信息，为章节“${chapterTitle}”生成一个**新版本**的细纲。
+将所有结果整合到指定的单一JSON结构中作为你的唯一输出。`;
     
     const user = userContext + '\n' + userTask;
 
-    return createPrompt(DETAILED_OUTLINE_SYSTEM_PROMPT, user);
+    return createPrompt(DETAILED_OUTLINE_GENERATION_PROMPT, user);
 };
+
+export const getCritiqueOutlinePrompts = (
+    outlineToCritique: DetailedOutlineAnalysis,
+    storyOutline: StoryOutline,
+    chapterTitle: string,
+    options: StoryOptions
+): { role: string; content: string; }[] => {
+
+    const user = `### 任务
+请激活你的“第三方评估员”人格，对以下为章节 **“${chapterTitle}”** 创作的细纲进行一次严格、独立的评估。
+
+**故事背景**:
+*   **总大纲**: ${storyOutline.plotSynopsis}
+*   **仿写风格**: ${options.authorStyle}
+
+**需要评估的细纲 (JSON)**:
+\`\`\`json
+${JSON.stringify(outlineToCritique, null, 2)}
+\`\`\`
+
+请严格按照你的角色设定，完成评估并以指定的JSON格式作为你的唯一输出。
+`;
+
+    return createPrompt(DETAILED_OUTLINE_CRITIQUE_PROMPT, user);
+}
 
 
 export const getChapterPrompts = (outline: StoryOutline, historyChapters: GeneratedChapter[], options: StoryOptions, detailedChapterOutline: DetailedOutlineAnalysis): { role: string; content: string; }[] => {

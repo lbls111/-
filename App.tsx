@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
 import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry, OutlineGenerationProgress, WorldCategory } from './types';
@@ -26,7 +25,6 @@ import ClipboardListIcon from './components/icons/ClipboardListIcon';
 import LogViewer from './components/LogViewer';
 import ThoughtProcessVisualizer from './components/ThoughtProcessVisualizer';
 import StopCircleIcon from './components/icons/StopCircleIcon';
-import GenerationProgressModal from './components/GenerationProgressModal';
 
 
 const storyStyles = {
@@ -242,10 +240,6 @@ const App: React.FC = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
     
-    // New state for outline generation progress
-    const [isOutlineGenerating, setIsOutlineGenerating] = useState(false);
-    const [outlineGenerationProgress, setOutlineGenerationProgress] = useState<OutlineGenerationProgress | null>(null);
-
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
     const planRefinementInputRef = useRef<HTMLTextAreaElement>(null);
@@ -343,9 +337,6 @@ const App: React.FC = () => {
                 if (prev === GameState.WRITING) return GameState.CHAPTER_COMPLETE;
                 return prev;
             });
-            // Also ensure any modal process is stopped
-            setIsOutlineGenerating(false);
-            setOutlineGenerationProgress(null);
             return;
         }
 
@@ -981,7 +972,7 @@ const App: React.FC = () => {
             </button>
         );
 
-        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing || isOutlineGenerating;
+        const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing;
 
         return (
             <div className="h-screen flex flex-col">
@@ -1111,9 +1102,6 @@ const App: React.FC = () => {
                                 storyOptions={storyOptions}
                                 activeOutlineTitle={activeOutlineTitle}
                                 setActiveOutlineTitle={setActiveOutlineTitle}
-                                isGenerating={isOutlineGenerating}
-                                setIsGenerating={setIsOutlineGenerating}
-                                setProgress={setOutlineGenerationProgress}
                                 setController={setAbortController}
                             />
                         )}
@@ -1197,7 +1185,6 @@ const App: React.FC = () => {
             <input type="file" ref={importFileRef} onChange={handleImport} accept=".json" style={{ display: 'none' }} />
             {isSettingsOpen && <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} options={storyOptions} setOptions={setStoryOptions} />}
             <LogViewer isOpen={isLogViewerOpen} onClose={() => setIsLogViewerOpen(false)} logs={logs} onClear={handleClearLogs} />
-            <GenerationProgressModal isOpen={isOutlineGenerating} progress={outlineGenerationProgress} onAbort={() => { handleAbort(); setIsOutlineGenerating(false); }} />
 
             {gameState === GameState.INITIAL ? renderInitialView() : renderAgentWorkspace()}
         </div>

@@ -2,7 +2,8 @@ import {
   getSearchPrompts,
   getChapterPrompts,
   getChapterTitlesPrompts,
-  getSingleOutlineIterationPrompts,
+  getDetailedOutlinePrompts,
+  getCritiqueOutlinePrompts,
   getEditChapterTextPrompts,
   getCharacterInteractionPrompts,
   getNewCharacterProfilePrompts,
@@ -11,7 +12,7 @@ import {
   getNarrativeToolboxPrompts,
 } from './prompts';
 
-import type { StoryOptions, Citation, FinalDetailedOutline } from '../types';
+import type { StoryOptions, Citation, FinalDetailedOutline, DetailedOutlineAnalysis, OutlineCritique } from '../types';
 
 interface PagesFunctionContext {
   request: Request;
@@ -83,7 +84,7 @@ const extractJsonFromText = (text: string): string => {
 // --- Custom OpenAI-Compatible API Helpers ---
 
 async function streamOpenAIResponse(
-    apiUrl: string, apiKey: string, model: string, messages: { role: string; content: string }[], options: StoryOptions, writable: WritableStream, action: string, isRefinement: boolean
+    apiUrl: string, apiKey: string, model: string, messages: { role: string; content: string }[], options: StoryOptions, writable: WritableStream, action: string
 ) {
     const writer = writable.getWriter();
     const encoder = new TextEncoder();
@@ -94,13 +95,6 @@ async function streamOpenAIResponse(
     };
 
     try {
-        if (action === 'generateSingleOutlineIteration') {
-            const initialVersion = isRefinement ? 2 : 1;
-            // Simulate multi-step progress for outline generation
-            await sendProgress({ status: 'critiquing', version: initialVersion, maxVersions: 5, score: 0, message: `正在生成 v${initialVersion} 初稿...` });
-            // Here you would normally have a loop, but for a single call we simulate progress
-        }
-
         const response = await fetch(new URL('/v1/chat/completions', apiUrl).toString(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
@@ -116,7 +110,6 @@ async function streamOpenAIResponse(
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let fullResponseText = '';
 
         while (true) {
             const { done, value } = await reader.read();
@@ -132,47 +125,12 @@ async function streamOpenAIResponse(
                         const parsed = JSON.parse(data);
                         const delta = parsed.choices[0]?.delta?.content;
                         if (delta) {
-                            if (action !== 'generateSingleOutlineIteration') {
-                               await sendProgress({ text: delta });
-                            }
-                            fullResponseText += delta;
+                           await sendProgress({ text: delta });
                         }
                     } catch (e) { /* Ignore parsing errors */ }
                 }
             }
         }
-        
-        if (action === 'generateSingleOutlineIteration') {
-            const jsonText = extractJsonFromText(fullResponseText);
-            const result = JSON.parse(jsonText);
-            const version = (isRefinement ? 1 : 0) + 1;
-            const finalOutline: FinalDetailedOutline = {
-                ...result.outline,
-                finalVersion: version,
-                optimizationHistory: [{ version: version, critique: result.critique, outline: result.outline }]
-            };
-            
-            await sendProgress({ 
-                status: 'critiquing', 
-                version: version, 
-                maxVersions: 5, 
-                score: result.critique.overallScore, 
-                message: `v${version} 评估完成，综合得分: ${result.critique.overallScore.toFixed(1)}`
-            });
-
-            // Simulate a short delay for effect
-            await new Promise(res => setTimeout(res, 500));
-
-            await sendProgress({ 
-                status: 'complete', 
-                version: version, 
-                maxVersions: 5, 
-                score: result.critique.overallScore, 
-                message: '细纲已生成!',
-                finalOutline: finalOutline
-            });
-        }
-
     } catch (e: any) {
         await sendProgress({ error: e.message });
     } finally {
@@ -224,9 +182,10 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         switch (action) {
             case 'performSearch': case 'generateChapterTitles': 
             case 'editChapterText': case 'generateNewCharacterProfile':
-            case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions': case 'getNarrativeToolboxSuggestions':
+            case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions':
+            case 'getNarrativeToolboxSuggestions': case 'generateDetailedOutline': case 'critiqueDetailedOutline':
                 isStreaming = false; break;
-            case 'generateChapter': case 'generateCharacterInteraction': case 'generateSingleOutlineIteration':
+            case 'generateChapter': case 'generateCharacterInteraction':
                 isStreaming = true; break;
             default: throw new Error(`Unknown action: ${action}`);
         }
@@ -235,7 +194,8 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'performSearch': model = options.searchModel; prompt = getSearchPrompts(restPayload.storyCore, options); break;
             case 'generateChapter': model = options.writingModel; prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline); break;
             case 'generateChapterTitles': model = options.planningModel; prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options); break;
-            case 'generateSingleOutlineIteration': model = options.planningModel; prompt = getSingleOutlineIterationPrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, options, restPayload.previousAttempt, restPayload.userInput); break;
+            case 'generateDetailedOutline': model = options.planningModel; prompt = getDetailedOutlinePrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, options, restPayload.previousAttempt, restPayload.userInput); break;
+            case 'critiqueDetailedOutline': model = options.planningModel; prompt = getCritiqueOutlinePrompts(restPayload.outlineToCritique, restPayload.storyOutline, restPayload.chapterTitle, options); break;
             case 'editChapterText': model = options.writingModel; prompt = getEditChapterTextPrompts(restPayload.originalText, restPayload.instruction, options); break;
             case 'generateCharacterInteraction': model = options.planningModel; prompt = getCharacterInteractionPrompts(restPayload.char1, restPayload.char2, restPayload.outline, options); break;
             case 'generateNewCharacterProfile': model = options.planningModel; prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options); break;
@@ -248,33 +208,39 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
 
         if (isStreaming) {
             const { readable, writable } = new TransformStream();
-            const isRefinement = action === 'generateSingleOutlineIteration' && !!restPayload.previousAttempt;
-            streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt, options, writable, action, isRefinement);
+            streamOpenAIResponse(options.apiBaseUrl, options.apiKey, model, prompt, options, writable, action);
             return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
         } else {
             const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt, options);
             let responseBody;
+            const jsonText = extractJsonFromText(resultText);
 
             switch (action) {
                 case 'generateChapterTitles': {
-                    const jsonText = extractJsonFromText(resultText);
                     responseBody = { titles: JSON.parse(jsonText) };
                     break;
                 }
+                case 'generateDetailedOutline': {
+                    responseBody = { outline: JSON.parse(jsonText) as DetailedOutlineAnalysis };
+                    break;
+                }
+                 case 'critiqueDetailedOutline': {
+                    responseBody = { critique: JSON.parse(jsonText) as OutlineCritique };
+                    break;
+                }
                 case 'generateNewCharacterProfile': {
-                    const jsonText = extractJsonFromText(resultText);
                     JSON.parse(jsonText); // Validation
                     responseBody = { text: jsonText };
                     break;
                 }
                 case 'performSearch':
-                    responseBody = { text: resultText, citations: [] };
+                    responseBody = { text: resultText, citations: [] }; // Special case, might not be JSON
                     break;
                 case 'editChapterText':
                 case 'getWorldbookSuggestions':
                 case 'getCharacterArcSuggestions':
                 case 'getNarrativeToolboxSuggestions':
-                    responseBody = { text: resultText };
+                    responseBody = { text: resultText }; // Special case, might not be JSON
                     break;
                 default:
                     responseBody = { text: resultText };

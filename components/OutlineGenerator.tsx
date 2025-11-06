@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis, OutlineGenerationProgress } from '../types';
+// FIX: The generateSingleOutlineIterationStream is now correctly implemented and exported from geminiService.
 import { generateChapterTitles, generateSingleOutlineIterationStream, generateNarrativeToolboxSuggestions } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
@@ -239,6 +240,9 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         }
     };
 
+    // FIX: Refactored to use the new streaming service function.
+    // The logic for preparing `previousAttempt` is now encapsulated in the service.
+    // The component now passes the entire `parsedOutline` and consumes progress updates from the stream.
     const handleGenerateIteration = async (optionalUserInput?: string) => {
         if (!activeOutlineTitle) return;
 
@@ -250,17 +254,9 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setController(ac);
 
         try {
-            const isRefinement = !!parsedOutline;
-            let previousAttempt: { outline: DetailedOutlineAnalysis, critique: OutlineCritique } | null = null;
-
-            if (isRefinement && parsedOutline) {
-                const latestHistory = parsedOutline.optimizationHistory[parsedOutline.optimizationHistory.length - 1];
-                previousAttempt = {
-                    outline: latestHistory.outline,
-                    critique: latestHistory.critique
-                };
-            } else {
-                 setOutlineHistory(prev => { // Clear previous result before starting a new one
+            // If it's the first run for this title, clear any potentially stale data.
+            if (!parsedOutline) {
+                setOutlineHistory(prev => {
                     const newHistory = {...prev};
                     delete newHistory[activeOutlineTitle];
                     return newHistory;
@@ -269,7 +265,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
 
             const stream = generateSingleOutlineIterationStream(
                 storyOutline, chapters, activeOutlineTitle, storyOptions,
-                previousAttempt,
+                parsedOutline, // Pass the whole parsed outline which contains history
                 optionalUserInput || userInput,
                 ac.signal
             );
@@ -277,9 +273,8 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
             setUserInput(''); // Clear input after use
 
             for await (const progress of stream) {
-                // FIX: A robust type guard to handle both error objects and progress updates from the stream.
-                if ('error' in progress) {
-                    throw new Error(String(progress.error || 'An unknown stream error occurred.'));
+                if (progress.status === 'error') {
+                    throw new Error(progress.message || 'An unknown stream error occurred.');
                 }
 
                 setProgress(progress);
@@ -293,11 +288,12 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
 
         } catch (e: any) {
             const errorMessage = e.message || "生成细纲时发生未知错误。";
-            setError(errorMessage);
-            setProgress(prev => prev ? {...prev, status: 'error', message: errorMessage} : null);
+             if (e.name !== 'AbortError' && !errorMessage.includes('aborted')) {
+                setError(errorMessage);
+                setProgress(prev => prev ? {...prev, status: 'error', message: errorMessage} : null);
+             }
         } finally {
-            // The modal will be closed by the App component
-            // setIsGenerating(false); 
+            setIsGenerating(false); 
             setController(null);
         }
     };

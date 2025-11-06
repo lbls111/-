@@ -1,5 +1,6 @@
 import type { GenerateContentResponse } from "@google/genai";
-import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique, OutlineGenerationProgress } from '../types';
+// FIX: Added missing OptimizationHistoryEntry type for the new streaming function.
+import type { StoryOutline, GeneratedChapter, StoryOptions, CharacterProfile, DetailedOutlineAnalysis, FinalDetailedOutline, Citation, OutlineCritique, OutlineGenerationProgress, OptimizationHistoryEntry } from '../types';
 
 // Helper for streaming responses from our backend
 async function* streamFetch(endpoint: string, body: any, signal?: AbortSignal): AsyncGenerator<any, void, undefined> {
@@ -105,8 +106,7 @@ export const generateChapterTitles = async (
     return titles;
 };
 
-// FIX: Corrected the return type to a union that includes the possible error object.
-export const generateSingleOutlineIterationStream = (
+export const generateDetailedOutline = async (
     outline: StoryOutline,
     chapters: GeneratedChapter[],
     chapterTitle: string,
@@ -114,13 +114,25 @@ export const generateSingleOutlineIterationStream = (
     previousAttempt: { outline: DetailedOutlineAnalysis, critique: OutlineCritique } | null,
     userInput: string,
     signal?: AbortSignal
-): AsyncGenerator<OutlineGenerationProgress | { error: string }, void, undefined> => {
-    return streamFetch('/api', {
-        action: 'generateSingleOutlineIteration',
+): Promise<{ outline: DetailedOutlineAnalysis }> => {
+    return await postFetch<{ outline: DetailedOutlineAnalysis }>('/api', {
+        action: 'generateDetailedOutline',
         payload: { outline, chapters, chapterTitle, options, previousAttempt, userInput }
     }, signal);
 };
 
+export const critiqueDetailedOutline = async (
+    outlineToCritique: DetailedOutlineAnalysis,
+    storyOutline: StoryOutline,
+    chapterTitle: string,
+    options: StoryOptions,
+    signal?: AbortSignal
+): Promise<{ critique: OutlineCritique }> => {
+    return await postFetch<{ critique: OutlineCritique }>('/api', {
+        action: 'critiqueDetailedOutline',
+        payload: { outlineToCritique, storyOutline, chapterTitle, options }
+    }, signal);
+};
 
 export const editChapterText = async (
     originalText: string,
@@ -186,3 +198,84 @@ export const generateNarrativeToolboxSuggestions = async (
         payload: { detailedOutline, storyOutline, options }
     }, signal);
 };
+
+// FIX: Implemented the missing streaming function for outline generation.
+// This client-side async generator orchestrates the generate-and-critique flow,
+// yielding progress updates to the UI without requiring backend changes.
+export async function* generateSingleOutlineIterationStream(
+    storyOutline: StoryOutline,
+    chapters: GeneratedChapter[],
+    chapterTitle: string,
+    options: StoryOptions,
+    parsedOutline: FinalDetailedOutline | null,
+    userInput: string,
+    signal?: AbortSignal
+): AsyncGenerator<OutlineGenerationProgress, void, undefined> {
+    const isRefinement = !!parsedOutline;
+    const currentVersion = (parsedOutline?.finalVersion || 0) + 1;
+    let previousAttempt: { outline: DetailedOutlineAnalysis; critique: OutlineCritique } | null = null;
+    
+    if (isRefinement && parsedOutline) {
+        const latestHistory = parsedOutline.optimizationHistory[parsedOutline.optimizationHistory.length - 1];
+        previousAttempt = {
+            outline: latestHistory.outline,
+            critique: latestHistory.critique,
+        };
+    }
+
+    try {
+        yield {
+            status: 'refining',
+            version: currentVersion,
+            maxVersions: 0, // Not used in this implementation
+            score: 0,
+            message: `v${currentVersion} - 生成细纲草稿...`,
+        };
+
+        const { outline: newOutline } = await generateDetailedOutline(
+            storyOutline, chapters, chapterTitle, options, previousAttempt, userInput, signal
+        );
+
+        if (signal?.aborted) { throw new Error("Operation aborted by user."); }
+
+        yield {
+            status: 'critiquing',
+            version: currentVersion,
+            maxVersions: 0,
+            score: 0,
+            message: `v${currentVersion} - 评估草稿...`,
+        };
+
+        const { critique: newCritique } = await critiqueDetailedOutline(
+            newOutline, storyOutline, chapterTitle, options, signal
+        );
+
+        if (signal?.aborted) { throw new Error("Operation aborted by user."); }
+
+        const newHistoryEntry: OptimizationHistoryEntry = {
+            version: currentVersion,
+            critique: newCritique,
+            outline: newOutline,
+        };
+
+        const finalOutline: FinalDetailedOutline = {
+            ...newOutline,
+            finalVersion: currentVersion,
+            optimizationHistory: isRefinement && parsedOutline ? [...parsedOutline.optimizationHistory, newHistoryEntry] : [newHistoryEntry],
+        };
+
+        yield {
+            status: 'complete',
+            version: currentVersion,
+            maxVersions: 0,
+            score: newCritique.overallScore,
+            message: `v${currentVersion} - 完成。最终评分: ${newCritique.overallScore.toFixed(1)}`,
+            finalOutline: finalOutline,
+        };
+
+    } catch (e: any) {
+        if (e.name !== 'AbortError' && !e.message?.includes('aborted')) {
+            yield { status: 'error', version: currentVersion, maxVersions: 0, score: 0, message: e.message };
+        }
+    }
+}
