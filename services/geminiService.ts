@@ -79,15 +79,6 @@ export const performSearch = (storyCore: string, options: StoryOptions, signal?:
     }, signal);
 };
 
-// RE-INTRODUCED: Generate the story outline JSON from the research text.
-export const generateStoryOutline = (storyCore: string, researchText: string, options: StoryOptions, signal?: AbortSignal): Promise<{ text: string }> => {
-    return postFetch<{ text: string }>('/api', {
-        action: 'generateStoryOutline',
-        payload: { storyCore, researchText, options }
-    }, signal);
-};
-
-
 export const generateChapterStream = (
     outline: StoryOutline,
     historyChapters: GeneratedChapter[],

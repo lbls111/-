@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { GameState } from './types';
-// FIX: Import the newly added OutlineGenerationProgress type.
-import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry, OutlineGenerationProgress } from './types';
-import { performSearch, generateStoryOutline, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
+import type { StoryOutline, GeneratedChapter, StoryOptions, ThoughtStep, StoryLength, Citation, CharacterProfile, WritingMethodology, AntiPatternGuide, AuthorStyle, ActiveTab, WorldEntry, DetailedOutlineAnalysis, FinalDetailedOutline, LogEntry, OutlineGenerationProgress, WorldCategory } from './types';
+import { performSearch, generateChapterStream, editChapterText, generateChapterTitles } from './services/geminiService';
 
 import SparklesIcon from './components/icons/SparklesIcon';
 import LoadingSpinner from './components/icons/LoadingSpinner';
@@ -241,7 +240,6 @@ const App: React.FC = () => {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLogViewerOpen, setIsLogViewerOpen] = useState(false);
 
-    // FIX: Add state to manage outline generation progress, which is now controlled by the parent component.
     const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
 
     const workspaceRef = useRef<HTMLDivElement>(null);
@@ -273,7 +271,7 @@ const App: React.FC = () => {
             type,
             message,
         };
-        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 50));
+        setLogs(prevLogs => [newLog, ...prevLogs].slice(0, 100)); // Increased log limit
     }, []);
     
     const handleClearLogs = () => {
@@ -346,16 +344,87 @@ const App: React.FC = () => {
         }
     };
 
+    const parseResearchToOutline = (markdown: string): StoryOutline => {
+        addLog("开始解析AI生成的创作简报...", 'info');
+
+        const newOutline: Partial<StoryOutline> = {};
+    
+        const extractSection = (start: string, end: string): string => {
+            const startIndex = markdown.indexOf(start);
+            if (startIndex === -1) return '';
+            const endIndex = markdown.indexOf(end, startIndex);
+            const content = markdown.substring(startIndex + start.length, endIndex === -1 ? undefined : endIndex);
+            return content.trim();
+        };
+
+        const extractListItem = (textBlock: string, key: string): string => {
+            const regex = new RegExp(`- \\*\\*${key}\\*\\*:\\s*([\\s\\S]*?)(?=\\n- \\*\\*|$)`, 'i');
+            const match = textBlock.match(regex);
+            return match ? match[1].trim() : '';
+        };
+    
+        newOutline.title = markdown.match(/# Title:\s*(.*)/)?.[1]?.trim() || '无标题';
+    
+        newOutline.genreAnalysis = extractSection('## Genre Analysis', '## World Concept');
+        newOutline.worldConcept = extractSection('## World Concept', '## Plot Synopsis');
+        newOutline.plotSynopsis = extractSection('## Plot Synopsis', '## Characters');
+    
+        const charactersText = extractSection('## Characters', '## Worldbook');
+        const characterBlocks = charactersText.split(/\n---\n/);
+        newOutline.characters = characterBlocks.map(block => {
+            const name = block.match(/### (.*)/)?.[1]?.trim();
+            if (!name) return null;
+    
+            const profile: CharacterProfile = {
+                name,
+                role: extractListItem(block, 'Role'),
+                coreConcept: extractListItem(block, 'Core Concept'),
+                immediateGoal: extractListItem(block, 'Immediate Goal'),
+                longTermAmbition: extractListItem(block, 'Long-Term Ambition'),
+                hiddenBurden: extractListItem(block, 'Hidden Burden'),
+                storyFunction: extractListItem(block, 'Story Function'),
+                definingObject: '', physicalAppearance: '', behavioralQuirks: '', speechPattern: '', originFragment: '', whatTheyRisk: '', keyRelationship: '', mainAntagonist: '', potentialChange: ''
+            };
+            return profile;
+        }).filter((p): p is CharacterProfile => p !== null && p.name !== '' && p.coreConcept !== '');
+    
+        const worldbookText = extractSection('## Worldbook', '## Writing Style Guide');
+        const categoryBlocks = worldbookText.split(/\n---\n/);
+        newOutline.worldCategories = categoryBlocks.map(block => {
+            const lines = block.trim().split('\n');
+            const nameMatch = lines[0].match(/### (.*)/);
+            if (!nameMatch) return null;
+            const name = nameMatch[1].trim();
+            const entries: WorldEntry[] = lines.slice(1).map(line => {
+                const entryMatch = line.match(/- \*\*(.*?)\*\*:\s*(.*)/);
+                if (!entryMatch) return null;
+                return { key: entryMatch[1].trim(), value: entryMatch[2].trim() };
+            }).filter((e): e is WorldEntry => e !== null);
+            return { name, entries };
+        }).filter((c): c is WorldCategory => c !== null && c.name !== '' && c.entries.length > 0);
+        
+        newOutline.writingMethodology = DEFAULT_WRITING_METHODOLOGY;
+        newOutline.antiPatternGuide = DEFAULT_ANTI_PATTERN_GUIDE;
+        
+        if (!newOutline.plotSynopsis || !newOutline.characters || newOutline.characters.length === 0 || !newOutline.worldCategories || newOutline.worldCategories.length === 0) {
+            throw new Error("Markdown解析失败：未能从AI的输出中提取出必要的结构（剧情大纲、角色、世界书）。请检查AI模型的输出是否遵循了指定的格式。");
+        }
+
+        addLog("创作简报解析成功。", 'success');
+        return newOutline as StoryOutline;
+    };
+
     const handlePlanningSuccess = async (finalOutline: StoryOutline) => {
         setStoryOutline(finalOutline);
         setGameState(GameState.PLANNING_COMPLETE);
-        setActiveTab('outline');
+        setActiveTab('worldbook');
         addLog("创作计划生成成功。", 'success');
         
         try {
+            addLog("开始自动生成初始章节标题...", 'info');
             const titles = await generateChapterTitles(finalOutline, [], storyOptions);
             setGeneratedTitles(titles);
-            addLog(`已自动生成 ${titles.length} 个初始章节标题。`, 'info');
+            addLog(`已自动生成 ${titles.length} 个初始章节标题。`, 'success');
         } catch(e: any) {
             handleError("自动生成初始章节标题失败: " + e.message, undefined);
         }
@@ -388,41 +457,54 @@ const App: React.FC = () => {
         addLog(`启动AI代理，核心创意: "${coreToUse.substring(0, 50)}..."`, 'info');
         
         const initialSteps: ThoughtStep[] = [
-            { id: 0, title: "第一步：研究与分析", model: storyOptions.searchModel, content: null, status: 'pending', citations: [] },
-            { id: 1, title: "第二步：生成完整创作计划", model: storyOptions.planningModel, content: null, status: 'pending' }
+            { id: 0, title: "第一步：研究与规划", model: storyOptions.searchModel, content: null, status: 'pending', citations: [] },
         ];
         setThoughtSteps(initialSteps);
         setGameState(GameState.PLANNING);
         setTimeout(() => scrollToBottom(workspaceRef), 100);
         
-        let currentAc: AbortController | null = null;
+        const ac = new AbortController();
+        setAbortController(ac);
 
         try {
-            // STEP 1: RESEARCH
-            currentAc = new AbortController();
-            setAbortController(currentAc);
             setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'running' } : s));
-            const searchResponse = await performSearch(coreToUse, storyOptions, currentAc.signal);
-            const researchText = searchResponse.text;
-            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: researchText, citations: searchResponse.citations } : s));
+            const searchResponse = await performSearch(coreToUse, storyOptions, ac.signal);
+            const fullResponseText = searchResponse.text;
 
-            // STEP 2: GENERATE OUTLINE
-            currentAc = new AbortController();
-            setAbortController(currentAc);
-            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'running' } : s));
-            const outlineResponse = await generateStoryOutline(coreToUse, researchText, storyOptions, currentAc.signal);
-            const outlineText = outlineResponse.text;
-            setThoughtSteps(prev => prev.map(s => s.id === 1 ? { ...s, status: 'complete', content: outlineText } : s));
+            const separator = "### 第二部分：创作简报输出 (MANDATORY BRIEF OUTPUT)";
+            const separatorIndex = fullResponseText.indexOf(separator);
 
-            const finalOutline = extractAndParseJson<StoryOutline>(
-                outlineText,
-                '\\[START_OUTLINE_JSON\\]',
-                '\\[END_OUTLINE_JSON\\]',
-                initialSteps[1].title
-            );
+            let thoughtProcessText = fullResponseText;
+            let markdownBriefText = "";
+
+            if (separatorIndex !== -1) {
+                thoughtProcessText = fullResponseText.substring(0, separatorIndex).trim();
+                markdownBriefText = fullResponseText.substring(separatorIndex + separator.length).trim();
+            } else {
+                addLog("警告：AI输出中未找到标准分割符。尝试备用解析方法。", 'info');
+                const titleIndex = fullResponseText.indexOf("# Title:");
+                if (titleIndex !== -1) {
+                    thoughtProcessText = fullResponseText.substring(0, titleIndex).trim();
+                    markdownBriefText = fullResponseText.substring(titleIndex).trim();
+                } else {
+                     // If all fails, assume the whole thing is the brief and there's no thought process
+                    markdownBriefText = fullResponseText;
+                    thoughtProcessText = "AI未能按预期格式提供详细的思考过程。";
+                    addLog("备用解析失败。将整个输出视为创作简报。", 'info');
+                }
+            }
+
+            setThoughtSteps(prev => prev.map(s => s.id === 0 ? { ...s, status: 'complete', content: thoughtProcessText, citations: searchResponse.citations } : s));
+
+            if (!markdownBriefText) {
+                throw new Error("AI完成了思考过程，但未能生成最终的创作简报。请重试。");
+            }
+            
+            const finalOutline = parseResearchToOutline(markdownBriefText);
             await handlePlanningSuccess(finalOutline);
+
         } catch (e: any) {
-            handleError(e.message, thoughtSteps.find(s => s.status === 'running')?.id);
+            handleError(e.message, 0);
         } finally {
             setAbortController(null);
         }
@@ -629,42 +711,23 @@ const App: React.FC = () => {
         }
     };
     
-    // FIX: Add handlers for the outline generation progress callbacks from the OutlineGenerator component.
-    const handleOutlineGenerationStart = (initialProgress: OutlineGenerationProgress) => {
+    const handleOutlineGenerationStart = () => {
         setIsGeneratingOutline(true);
+        addLog("细纲生成/优化开始。", 'info');
     };
-    const handleOutlineGenerationProgress = (progress: OutlineGenerationProgress) => {
-        // This function can be expanded later to show detailed progress in a UI element.
-    };
-    const handleOutlineGenerationEnd = () => {
+    
+    const handleOutlineGenerationEnd = (errorOccurred: boolean) => {
         setIsGeneratingOutline(false);
+        if (errorOccurred) {
+            addLog("细纲生成/优化因错误而终止。", 'error');
+        } else {
+            addLog("细纲生成/优化完成。", 'success');
+        }
     };
 
     const renderThoughtStepContent = (step: ThoughtStep) => {
         if (!step.content) return null;
-    
-        // Step 1 (ID 0) is pure markdown
-        if (step.id === 0) {
-            return <ThoughtProcessVisualizer text={step.content} refineCallback={handleRefineFromSuggestion} />;
-        }
-    
-        // Step 2 (ID 1) has markdown thought process and JSON
-        const thoughtEndMarker = '[START_OUTLINE_JSON]';
-        const thoughtEndIndex = step.content.indexOf(thoughtEndMarker);
-    
-        if (thoughtEndIndex !== -1) {
-            const thoughtText = step.content.substring(0, thoughtEndIndex).trim();
-            const jsonText = step.content.substring(thoughtEndIndex);
-            return (
-                <div className="space-y-4">
-                    <ThoughtProcessVisualizer text={thoughtText} refineCallback={handleRefineFromSuggestion} />
-                    <pre className="text-xs bg-slate-950/50 p-2 rounded-md mt-4 border border-slate-700 text-purple-300 overflow-x-auto"><code>{jsonText}</code></pre>
-                </div>
-            );
-        }
-    
-        // Fallback for unexpected content format
-        return <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{step.content}</div>;
+        return <ThoughtProcessVisualizer text={step.content} refineCallback={handleRefineFromSuggestion} />;
     };
     
     const handleResetPlan = () => {
@@ -698,6 +761,7 @@ const App: React.FC = () => {
         }
 
         const exportData = {
+            gameState,
             storyOutline,
             chapters,
             storyOptions,
@@ -705,6 +769,7 @@ const App: React.FC = () => {
             generatedTitles,
             outlineHistory,
             activeOutlineTitle,
+            thoughtSteps,
         };
 
         const jsonString = JSON.stringify(exportData, null, 2);
@@ -772,6 +837,7 @@ const App: React.FC = () => {
                 let titlesToLoad: string[] = data.generatedTitles || [];
                 let historyToLoad: Record<string, string> = data.outlineHistory || {};
                 let activeTitleToLoad: string | null = data.activeOutlineTitle || null;
+                let thoughtStepsToLoad: ThoughtStep[] = data.thoughtSteps || [];
                 
                 if (data.storyOutline && typeof data.storyOutline === 'object') {
                     storyOutlineToLoad = {
@@ -807,6 +873,7 @@ const App: React.FC = () => {
                 setGeneratedTitles(titlesToLoad);
                 setOutlineHistory(historyToLoad);
                 setActiveOutlineTitle(activeTitleToLoad);
+                setThoughtSteps(thoughtStepsToLoad);
                 setError(null);
                 addLog(`成功导入文件: ${file.name}`, 'success');
 
@@ -890,7 +957,7 @@ const App: React.FC = () => {
                     disabled={!storyCore.trim() || gameState === GameState.PLANNING}
                 >
                    {gameState === GameState.PLANNING ? <LoadingSpinner className="w-6 h-6 mr-2"/> : <SparklesIcon className="w-6 h-6 mr-2" />}
-                   {gameState === GameState.PLANNING ? '正在运行...' : '启动AI代理'}
+                   {gameState === GameState.PLANNING ? '正在规划...' : '启动AI代理'}
                 </button>
                 {error && <p className="mt-4 text-red-400">{error}</p>}
             </div>
@@ -936,7 +1003,6 @@ const App: React.FC = () => {
             </button>
         );
 
-        // FIX: Add isGeneratingOutline to the check for running tasks.
         const isTaskRunning = gameState === GameState.PLANNING || gameState === GameState.WRITING || isEditing || isGeneratingOutline;
 
         return (
@@ -1000,7 +1066,7 @@ const App: React.FC = () => {
                         {activeTab === 'agent' && (
                              <div className="space-y-4">
                                 {thoughtSteps.map(step => (
-                                    <details key={step.id} data-step-id={step.id} className="glass-card rounded-lg" open={step.status === 'running' || step.status === 'error' || step.status === 'complete'}>
+                                    <details key={step.id} data-step-id={step.id} className="glass-card rounded-lg" open>
                                         <summary className="p-3 cursor-pointer flex items-center justify-between font-semibold text-slate-200">
                                             <div className="flex items-center">
                                                 {step.status === 'running' && <LoadingSpinner className="w-5 h-5 mr-3 text-teal-400" />}
@@ -1014,7 +1080,6 @@ const App: React.FC = () => {
                                         {step.content !== null && (
                                             <div className="p-4 border-t border-white/10">
                                                 {renderThoughtStepContent(step)}
-                                                {step.status === 'running' && <span className="inline-block w-2 h-4 bg-slate-300 animate-pulse ml-1" />}
                                                 {step.citations && step.citations.length > 0 && (
                                                     <div className="mt-4 pt-3 border-t border-white/10">
                                                         <h4 className="text-sm font-bold text-slate-200 mb-2 flex items-center"><SearchIcon className="w-4 h-4 mr-2"/>参考文献</h4>
@@ -1077,10 +1142,8 @@ const App: React.FC = () => {
                                 storyOptions={storyOptions}
                                 activeOutlineTitle={activeOutlineTitle}
                                 setActiveOutlineTitle={setActiveOutlineTitle}
-                                // FIX: Pass the new props for state management to the component.
                                 isGenerating={isGeneratingOutline}
                                 onGenerationStart={handleOutlineGenerationStart}
-                                onGenerationProgress={handleOutlineGenerationProgress}
                                 onGenerationEnd={handleOutlineGenerationEnd}
                              />
                         )}

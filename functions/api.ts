@@ -1,6 +1,5 @@
 import {
   getSearchPrompts,
-  getStoryOutlinePrompts, // RE-INTRODUCED
   getChapterPrompts,
   getChapterTitlesPrompts,
   getSingleOutlineIterationPrompts,
@@ -12,7 +11,6 @@ import {
   getNarrativeToolboxPrompts,
 } from './prompts';
 
-// FIX: Removed unused import for OutlineGenerationProgress
 import type { StoryOptions, Citation } from '../types';
 
 interface PagesFunctionContext {
@@ -173,7 +171,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         let isStreaming = false;
         
         switch (action) {
-            case 'performSearch': case 'generateStoryOutline': case 'generateChapterTitles': 
+            case 'performSearch': case 'generateChapterTitles': 
             case 'editChapterText': case 'generateNewCharacterProfile':
             case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions': case 'getNarrativeToolboxSuggestions':
             case 'generateSingleOutlineIteration':
@@ -185,7 +183,6 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
 
         switch (action) {
             case 'performSearch': model = options.searchModel; prompt = getSearchPrompts(restPayload.storyCore, options); break;
-            case 'generateStoryOutline': model = options.planningModel; prompt = getStoryOutlinePrompts(restPayload.storyCore, restPayload.researchText, options); break;
             case 'generateChapter': model = options.writingModel; prompt = getChapterPrompts(restPayload.outline, restPayload.historyChapters, options, restPayload.detailedChapterOutline); break;
             case 'generateChapterTitles': model = options.planningModel; prompt = getChapterTitlesPrompts(restPayload.outline, restPayload.chapters, options); break;
             case 'generateSingleOutlineIteration': model = options.planningModel; prompt = getSingleOutlineIterationPrompts(restPayload.outline, restPayload.chapters, restPayload.chapterTitle, options, restPayload.previousAttempt, restPayload.userInput); break;
@@ -227,7 +224,6 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                 case 'performSearch':
                     responseBody = { text: resultText, citations: [] };
                     break;
-                case 'generateStoryOutline': // This action returns text that contains JSON
                 case 'editChapterText':
                 case 'getWorldbookSuggestions':
                 case 'getCharacterArcSuggestions':
