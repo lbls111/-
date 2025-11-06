@@ -24,6 +24,7 @@ import UploadIcon from './components/icons/UploadIcon';
 import ClipboardListIcon from './components/icons/ClipboardListIcon';
 import LogViewer from './components/LogViewer';
 import GenerationProgressModal from './components/GenerationProgressModal';
+import ThoughtProcessVisualizer from './components/ThoughtProcessVisualizer';
 
 
 const storyStyles = {
@@ -228,6 +229,7 @@ const App: React.FC = () => {
 
     const workspaceRef = useRef<HTMLDivElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
+    const planRefinementInputRef = useRef<HTMLTextAreaElement>(null);
 
     // --- LOGGING SYSTEM ---
     useEffect(() => {
@@ -509,7 +511,7 @@ const App: React.FC = () => {
             
             if (contentStartIndex !== -1) {
                 finalThought = thoughtStartIndex !== -1 
-                    ? fullText.substring(thoughtStartIndex + thoughtStartMarker.length, contentStartIndex).trim()
+                    ? fullText.substring(thoughtStartMarker.length, contentStartIndex).trim()
                     : '';
                 
                 const contentAndTitleRaw = fullText.substring(contentStartIndex + contentStartMarker.length).trimStart();
@@ -597,38 +599,35 @@ const App: React.FC = () => {
         }
     };
 
-    const highlightText = (text: string) => {
-        // First, handle JSON blocks to render them in a <pre> tag
-        const parts = text.split(/(\[START_OUTLINE_JSON\][\s\S]*?\[END_OUTLINE_JSON\]|\[START_DETAILED_OUTLINE_JSON\][\s\S]*?\[END_DETAILED_OUTLINE_JSON\])/g);
+    const handleRefineFromSuggestion = (textToRefine: string) => {
+        setPlanRefinementInput(`针对以下疑点进行优化：\n"${textToRefine}"\n\n我的想法是：`);
+        if (planRefinementInputRef.current) {
+            planRefinementInputRef.current.focus();
+        }
+    };
     
-        return parts.map((part, index) => {
-            if (part.startsWith('[START_')) {
-                return <pre key={index} className="text-xs bg-slate-950/50 p-2 rounded-md mt-2 border border-slate-700 text-purple-300 overflow-x-auto"><code>{part}</code></pre>;
-            }
-            // Then, handle markdown-like headers and lists within the remaining text parts
-            const subParts = part.split(/(\n(?:###|####)\s.*)/g);
-            return subParts.map((subPart, subIndex) => {
-                 if (subPart.match(/^\n###\s/)) {
-                    return <h3 key={`${index}-${subIndex}`} className="text-teal-400 block mt-4 mb-2 font-bold text-base">{subPart.replace('###', '').trim()}</h3>;
-                }
-                 if (subPart.match(/^\n####\s用户要求/)) {
-                    return <h4 key={`${index}-${subIndex}`} className="text-cyan-400 font-semibold block mt-3 mb-1 text-sm">{subPart.replace('####', '').trim()}</h4>;
-                }
-                if (subPart.match(/^\n####\s你的理解/)) {
-                    return <h4 key={`${index}-${subIndex}`} className="text-sky-400 font-semibold block mt-3 mb-1 text-sm">{subPart.replace('####', '').trim()}</h4>;
-                }
-                if (subPart.match(/^\n####\s质疑你的理解/)) {
-                    return <h4 key={`${index}-${subIndex}`} className="text-amber-400 font-semibold block mt-3 mb-1 text-sm">{subPart.replace('####', '').trim()}</h4>;
-                }
-                if (subPart.match(/^\n####\s思考你的理解/)) {
-                    return <h4 key={`${index}-${subIndex}`} className="text-green-400 font-semibold block mt-3 mb-1 text-sm">{subPart.replace('####', '').trim()}</h4>;
-                }
-                if (subPart.match(/^\n\*\s/)) {
-                    return <p key={`${index}-${subIndex}`} className="pl-4 border-l-2 border-slate-700 my-1">{subPart.replace('*', '•').trim()}</p>;
-                }
-                return subPart;
-            });
-        });
+    const renderThoughtStepContent = (step: ThoughtStep) => {
+        if (!step.content) return null;
+        if (step.id !== 1) { // Apply old highlighting for step 0 (search)
+            return <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{step.content}</div>;
+        }
+
+        const thoughtEndMarker = '[START_OUTLINE_JSON]';
+        const thoughtEndIndex = step.content.indexOf(thoughtEndMarker);
+
+        if (thoughtEndIndex === -1) { // Fallback if format is unexpected
+             return <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{step.content}</div>;
+        }
+
+        const thoughtText = step.content.substring(0, thoughtEndIndex).trim();
+        const jsonText = step.content.substring(thoughtEndIndex);
+
+        return (
+            <div className="space-y-4">
+                <ThoughtProcessVisualizer text={thoughtText} refineCallback={handleRefineFromSuggestion} />
+                <pre className="text-xs bg-slate-950/50 p-2 rounded-md mt-4 border border-slate-700 text-purple-300 overflow-x-auto"><code>{jsonText}</code></pre>
+            </div>
+        );
     };
     
     const handleResetPlan = () => {
@@ -977,8 +976,8 @@ const App: React.FC = () => {
                                             <span className="text-xs font-mono bg-slate-700/50 text-sky-300 px-2 py-1 rounded">{step.model}</span>
                                         </summary>
                                         {step.content !== null && (
-                                            <div className="p-4 border-t border-white/10 text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">
-                                                {highlightText(step.content)}
+                                            <div className="p-4 border-t border-white/10">
+                                                {renderThoughtStepContent(step)}
                                                 {step.status === 'running' && <span className="inline-block w-2 h-4 bg-slate-300 animate-pulse ml-1" />}
                                                 {step.citations && step.citations.length > 0 && (
                                                     <div className="mt-4 pt-3 border-t border-white/10">
@@ -996,6 +995,7 @@ const App: React.FC = () => {
                                             <h3 className="text-lg font-semibold text-slate-200 mb-3">优化创作计划</h3>
                                             <form onSubmit={handleRefinePlan} className="space-y-3">
                                                 <textarea
+                                                    ref={planRefinementInputRef}
                                                     value={planRefinementInput}
                                                     onChange={e => setPlanRefinementInput(e.target.value)}
                                                     placeholder="输入优化指令，例如：让世界观更黑暗，增加一个敌对组织..."
@@ -1098,13 +1098,20 @@ const App: React.FC = () => {
                                 {gameState !== GameState.WRITING && gameState !== GameState.PLANNING && (
                                     <div className="flex flex-col md:flex-row justify-center items-center gap-4">
                                         {chapters.length > 0 && (
-                                            <button 
-                                                onClick={regenerateLastChapter} 
-                                                className="w-full md:w-auto flex items-center justify-center px-8 py-4 bg-slate-600 text-white font-bold rounded-lg hover:bg-slate-500 transition-transform transform hover:scale-105 shadow-lg"
-                                                disabled={gameState === GameState.WRITING}
-                                            >
-                                                <RefreshCwIcon className="w-6 h-6 mr-2" />重新生成
-                                            </button>
+                                            <>
+                                                {/*
+                                                  * FIX: Removed redundant `disabled={gameState === GameState.WRITING}` check.
+                                                  * The parent container already has a condition `gameState !== GameState.WRITING`,
+                                                  * which means TypeScript correctly infers that `gameState` cannot be `WRITING` here.
+                                                  * This redundancy was causing a type error.
+                                                */}
+                                                <button 
+                                                    onClick={regenerateLastChapter} 
+                                                    className="w-full md:w-auto flex items-center justify-center px-8 py-4 bg-slate-600 text-white font-bold rounded-lg hover:bg-slate-500 transition-transform transform hover:scale-105 shadow-lg"
+                                                >
+                                                    <RefreshCwIcon className="w-6 h-6 mr-2" />重新生成
+                                                </button>
+                                            </>
                                         )}
                                         <button 
                                             onClick={() => writeChapter(nextChapterTitle, outlineHistory[nextChapterTitle])} 

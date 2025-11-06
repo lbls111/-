@@ -226,7 +226,7 @@ export const getChapterTitlesPrompts = (outline: StoryOutline, chapters: Generat
     return createPrompt(system, user);
 }
 
-const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v2.2 - 单轮迭代模式)
+const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v2.3 - 快照保存)
 
 你是一个由多个专家组成的AI写作顾问团队，融合了**首席编剧**的创造力、**网文分析师**的市场洞察力、以及一个**极其挑剔的第三方评论员**。你的存在是为了打破常规，创造出乎意料但又逻辑自洽的叙事体验。
 
@@ -278,7 +278,7 @@ const DETAILED_OUTLINE_SYSTEM_PROMPT = `## 人格：颠覆性叙事架构师 (v2
 \`\`\`json
 {
   "critique": {
-    "thoughtProcess": "#### 用户要求\\n...\\n#### 你的理解\\n...\\n#### 质疑你的理解\\n...\\n#### 思考你的理解\\n...",
+    "thoughtProcess": "#### 用户要求\\n简述你收到的核心创作指令。\\n#### 你的理解\\n阐述你对这些指令的深入解读和你的创作目标。\\n#### 质疑你的理解\\n提出至少两个在将创意转化为大纲时可能存在的挑战或潜在的矛盾点，并进行自我辩驳，以确保方案的严谨性。\\n#### 思考你的理解\\n总结并确定你最终的创作策略和核心设计思路。",
     "overallScore": <number>,
     "scoringBreakdown": [ { "dimension": "<string>", "score": <number>, "reason": "<string>" } ],
     "improvementSuggestions": [ { "area": "<string>", "suggestion": "<string>" } ]
@@ -344,7 +344,7 @@ ${JSON.stringify(previousAttempt.critique.improvementSuggestions, null, 2)}
 
     const userTask = `### 任务
 请激活你的“颠覆性叙事架构师”人格，严格遵循五大创作法则，根据以上所有信息，为章节“${chapterTitle}”生成一个**新版本**的细纲，并对其进行一次独立的、全新的评估。
-**关键：** 在 \`critique.thoughtProcess\` 字段中，必须完整地包含你的四步思考过程。
+**关键：** 在 \`critique.thoughtProcess\` 字段中，必须完整地包含你的四步思考过程，并严格遵循指定的Markdown格式。
 将所有结果整合到指定的单一JSON结构中。`;
     
     const user = userContext + '\n' + userTask;
@@ -585,7 +585,12 @@ export const getNarrativeToolboxPrompts = (tool: 'iceberg' | 'conflict', detaile
 2.  **与主角目标相关**：这个冲突必须直接影响主角的某个核心目标，成为他必须解决的障碍或意想不到的机遇。`
     };
 
-    const user = `### 故事背景
+    const user = `### 任务
+请使用以下工具对上述细纲进行分析，并提供具体的创意建议。
+
+${toolPrompts[tool]}
+
+### 故事背景
 *   **剧情总纲**: ${storyOutline.plotSynopsis}
 *   **世界观**: ${stringifyWorldbook(storyOutline.worldCategories)}
 
@@ -593,11 +598,6 @@ export const getNarrativeToolboxPrompts = (tool: 'iceberg' | 'conflict', detaile
 \`\`\`json
 ${JSON.stringify(detailedOutline, null, 2)}
 \`\`\`
-
-### 你的任务
-请使用以下工具对上述细纲进行分析，并提供具体的创意建议。
-
-${toolPrompts[tool]}
 `;
     
     return createPrompt(system, user);

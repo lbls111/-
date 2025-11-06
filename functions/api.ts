@@ -167,21 +167,76 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             return new Response(readable, { headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' }});
         } else {
             const resultText = await postOpenAIRequest(options.apiBaseUrl, options.apiKey, model, prompt, options);
-            
-            if (action === 'generateSingleOutlineIteration') {
-                const resultJson = JSON.parse(extractJsonFromText(resultText));
-                return new Response(JSON.stringify(resultJson), { headers: { 'Content-Type': 'application/json' }});
-            }
-
             let responseBody;
-            const jsonText = extractJsonFromText(resultText);
+
             switch (action) {
-                case 'performSearch': responseBody = { text: resultText, citations: [] }; break; // No citations in custom mode
-                case 'generateStoryOutline': responseBody = { text: `[START_OUTLINE_JSON]\n${jsonText}\n[END_OUTLINE_JSON]` }; break;
-                case 'generateChapterTitles': responseBody = { titles: JSON.parse(jsonText) }; break;
-                case 'generateNewCharacterProfile': responseBody = { text: jsonText }; break;
-                case 'editChapterText': responseBody = { text: resultText }; break;
-                default: responseBody = { text: resultText };
+                case 'generateStoryOutline': {
+                    const startMarker = '[START_OUTLINE_JSON]';
+                    const endMarker = '[END_OUTLINE_JSON]';
+                    const startMarkerIndex = resultText.indexOf(startMarker);
+
+                    if (startMarkerIndex === -1) {
+                        // Fallback: Model might have ignored instructions and sent only JSON.
+                        const extractedJson = extractJsonFromText(resultText);
+                        try {
+                            const parsedJson = JSON.parse(extractedJson); // Validate
+                            const cleanJsonString = JSON.stringify(parsedJson, null, 2);
+                            responseBody = { text: `${startMarker}\n${cleanJsonString}\n${endMarker}` };
+                        } catch (e) {
+                            console.error("Raw failing output for outline:", resultText);
+                            throw new Error(`模型输出严重格式错误：未能找到预期的 '${startMarker}' 标记，且内容也不是有效的JSON。`);
+                        }
+                    } else {
+                        // Standard case: Found the marker.
+                        const thoughtProcess = resultText.substring(0, startMarkerIndex);
+                        const jsonContainerText = resultText.substring(startMarkerIndex);
+                        const extractedJson = extractJsonFromText(jsonContainerText);
+                        try {
+                            const parsedJson = JSON.parse(extractedJson); // Validate
+                            const cleanJsonString = JSON.stringify(parsedJson, null, 2);
+                            responseBody = { text: `${thoughtProcess}${startMarker}\n${cleanJsonString}\n${endMarker}` };
+                        } catch (e: any) {
+                            console.error("Raw failing output for outline:", resultText);
+                            throw new Error(`解析创作大纲失败：模型返回的JSON结构无效。错误: ${e.message}`);
+                        }
+                    }
+                    break;
+                }
+                case 'generateSingleOutlineIteration': {
+                    const jsonText = extractJsonFromText(resultText);
+                    // This action must return a valid JSON object directly
+                    const resultJson = JSON.parse(jsonText);
+                    return new Response(JSON.stringify(resultJson), { headers: { 'Content-Type': 'application/json' } });
+                }
+                case 'generateChapterTitles': {
+                    const jsonText = extractJsonFromText(resultText);
+                    responseBody = { titles: JSON.parse(jsonText) };
+                    break;
+                }
+                case 'generateNewCharacterProfile': {
+                    const jsonText = extractJsonFromText(resultText);
+                    try {
+                        // Validate JSON before sending to frontend
+                        JSON.parse(jsonText);
+                        responseBody = { text: jsonText };
+                    } catch (e) {
+                        throw new Error('模型返回了无效的角色档案JSON。');
+                    }
+                    break;
+                }
+                case 'performSearch':
+                    responseBody = { text: resultText, citations: [] }; // No citations in custom mode
+                    break;
+                // These actions expect raw text/markdown, so just pass through
+                case 'editChapterText':
+                case 'getWorldbookSuggestions':
+                case 'getCharacterArcSuggestions':
+                case 'getNarrativeToolboxSuggestions':
+                    responseBody = { text: resultText };
+                    break;
+                default:
+                     // A safe fallback for any other non-streaming action
+                    responseBody = { text: resultText };
             }
             return new Response(JSON.stringify(responseBody), { headers: { 'Content-Type': 'application/json' }});
         }

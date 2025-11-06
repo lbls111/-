@@ -7,6 +7,7 @@ import PlusCircleIcon from './icons/PlusCircleIcon';
 import EditIcon from './icons/EditIcon';
 import TrashIcon from './icons/TrashIcon';
 import SparklesIcon from './icons/SparklesIcon';
+import ThoughtProcessVisualizer from './ThoughtProcessVisualizer';
 
 
 interface CharacterArchiveProps {
@@ -79,14 +80,15 @@ const AISuggestionBlock: React.FC<{
             const response = await generateCharacterArcSuggestions(character, storyOutline, storyOptions);
             const rawText = response.text;
             const suggestionMarker = '### 建议';
-            const thoughtMarker = '### 思考过程';
+            
             const suggestionIndex = rawText.indexOf(suggestionMarker);
             
-            if (suggestionIndex !== -1 && rawText.includes(thoughtMarker)) {
-                setThought(rawText.substring(0, suggestionIndex).replace(thoughtMarker, '').trim());
+            if (suggestionIndex !== -1) {
+                setThought(rawText.substring(0, suggestionIndex).replace('### 思考过程', '').trim());
                 setSuggestion(rawText.substring(suggestionIndex).replace(suggestionMarker, '').trim());
             } else {
                 setSuggestion(rawText);
+                 setThought(null);
             }
 
         } catch (e: any) {
@@ -97,7 +99,7 @@ const AISuggestionBlock: React.FC<{
     };
 
     return (
-        <div className="col-span-full mt-4 pt-4 border-t border-slate-700/50">
+        <div className="col-span-full mt-4 pt-4 border-t border-slate-700/50 space-y-3">
             <button
                 onClick={handleGetSuggestion}
                 disabled={isLoading}
@@ -106,19 +108,13 @@ const AISuggestionBlock: React.FC<{
                 {isLoading ? <LoadingSpinner className="w-5 h-5 mr-2" /> : <SparklesIcon className="w-5 h-5 mr-2" />}
                 {isLoading ? '正在分析角色...' : 'AI 深化角色 (动机与弧光)'}
             </button>
-            {thought && (
-                 <details className="mt-3 group">
-                    <summary className="cursor-pointer list-none flex items-center text-xs font-bold text-indigo-300 p-2 rounded-lg hover:bg-indigo-950/40 transition-colors">
-                        查看AI思考过程
-                        <span className="ml-2 text-indigo-400/70 transform transition-transform group-open:rotate-90">&#9654;</span>
-                    </summary>
-                    <div className="mt-2 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: thought.replace(/\n/g, '<br />').replace(/####\s(.*?)/g, '<h6 class="font-bold text-indigo-400 mt-2">$1</h6>') }} />
-                </details>
-            )}
+            {thought && <ThoughtProcessVisualizer text={thought} />}
             {suggestion && (
-                <div className="mt-3 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
+                <div className="p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
                     <h4 className="font-bold text-indigo-300 mb-2">AI 角色深化建议</h4>
-                    <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: suggestion.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<h5 class="font-bold text-indigo-400 mt-2">$1</h5>') }} />
+                    <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5">
+                        {suggestion}
+                    </div>
                 </div>
             )}
             {error && <p className="mt-2 text-xs text-red-400">{error}</p>}

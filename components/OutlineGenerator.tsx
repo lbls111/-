@@ -6,6 +6,7 @@ import LoadingSpinner from './icons/LoadingSpinner';
 import SendIcon from './icons/SendIcon';
 import CopyIcon from './icons/CopyIcon';
 import RefreshCwIcon from './icons/RefreshCwIcon';
+import ThoughtProcessVisualizer from './ThoughtProcessVisualizer';
 
 interface OutlineGeneratorProps {
     storyOutline: StoryOutline;
@@ -102,39 +103,14 @@ const ScoreCircle: React.FC<{ score: number }> = ({ score }) => {
     );
 };
 
-const ThoughtProcessDisplay: React.FC<{ text: string }> = ({ text }) => {
-    const sections = text.split(/####\s(.*?)\n/g).slice(1);
-    const pairs: [string, string][] = [];
-    for (let i = 0; i < sections.length; i += 2) {
-        if (sections[i] && sections[i+1]) {
-            pairs.push([sections[i].trim(), sections[i+1].trim()]);
-        }
-    }
-    
-    const getHeaderColor = (title: string) => {
-        if (title.includes('用户要求')) return 'text-cyan-400';
-        if (title.includes('你的理解')) return 'text-sky-400';
-        if (title.includes('质疑你的理解')) return 'text-amber-400';
-        if (title.includes('思考你的理解')) return 'text-green-400';
-        return 'text-slate-300';
-    }
-
-    return (
-        <div className="p-3 bg-slate-800/30 rounded-lg space-y-3 text-sm mb-4">
-            <h5 className="text-base font-bold text-slate-100">AI 创作思路</h5>
-            {pairs.map(([title, content], index) => (
-                <div key={index}>
-                    <p className={`font-semibold ${getHeaderColor(title)}`}>{title}</p>
-                    <p className="text-slate-400 whitespace-pre-wrap pl-2 border-l-2 border-slate-600 mt-1">{content}</p>
-                </div>
-            ))}
-        </div>
-    );
-};
-
 const CritiqueDisplay: React.FC<{ critique: OutlineCritique }> = ({ critique }) => (
     <div className="p-4 bg-slate-950/40 rounded-lg border border-slate-700/50 space-y-6">
-        {critique.thoughtProcess && <ThoughtProcessDisplay text={critique.thoughtProcess} />}
+        {critique.thoughtProcess && (
+            <div className="pb-6 border-b border-slate-700">
+                <h4 className="text-lg font-bold text-slate-100 mb-3">AI 创作思路</h4>
+                <ThoughtProcessVisualizer text={critique.thoughtProcess} />
+            </div>
+        )}
         <div className="flex flex-col md:flex-row items-center gap-6">
             <div className="flex-shrink-0">
                 <ScoreCircle score={critique.overallScore} />

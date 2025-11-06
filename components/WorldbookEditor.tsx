@@ -6,6 +6,7 @@ import PlusCircleIcon from './icons/PlusCircleIcon';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 import { generateWorldbookSuggestions } from '../services/geminiService';
+import ThoughtProcessVisualizer from './ThoughtProcessVisualizer';
 
 interface WorldbookEditorProps {
     storyOutline: StoryOutline;
@@ -107,14 +108,15 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
             const response = await generateWorldbookSuggestions(storyOutline, storyOptions);
             const rawText = response.text;
             const suggestionMarker = '### 建议';
-            const thoughtMarker = '### 思考过程';
+
             const suggestionIndex = rawText.indexOf(suggestionMarker);
             
-            if (suggestionIndex !== -1 && rawText.includes(thoughtMarker)) {
-                setThought(rawText.substring(0, suggestionIndex).replace(thoughtMarker, '').trim());
+            if (suggestionIndex !== -1) {
+                setThought(rawText.substring(0, suggestionIndex).replace('### 思考过程', '').trim());
                 setSuggestions(rawText.substring(suggestionIndex).replace(suggestionMarker, '').trim());
             } else {
                 setSuggestions(rawText);
+                setThought(null);
             }
         } catch (e: any) {
             setSuggestionError(e.message || "获取建议失败。");
@@ -169,19 +171,17 @@ const WorldbookEditor: React.FC<WorldbookEditorProps> = ({ storyOutline, onUpdat
                 </div>
                  
                 {thought && (
-                     <details className="group">
-                        <summary className="cursor-pointer list-none flex items-center text-xs font-bold text-indigo-300 p-2 rounded-lg hover:bg-indigo-950/40 transition-colors">
-                            查看AI思考过程
-                            <span className="ml-2 text-indigo-400/70 transform transition-transform group-open:rotate-90">&#9654;</span>
-                        </summary>
-                        <div className="mt-2 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: thought.replace(/\n/g, '<br />').replace(/####\s(.*?)/g, '<h6 class="font-bold text-indigo-400 mt-2">$1</h6>') }} />
-                    </details>
+                    <div className="space-y-3">
+                        <ThoughtProcessVisualizer text={thought} />
+                    </div>
                 )}
                 
                 {suggestions && (
                     <div className="p-4 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
                         <h4 className="font-bold text-indigo-300 mb-2">AI 创意启发</h4>
-                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: suggestions.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-400">$1</strong>') }} />
+                        <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5">
+                           {suggestions}
+                        </div>
                     </div>
                 )}
                 {suggestionError && <p className="text-sm text-red-400 bg-red-900/30 p-2 rounded-md">{suggestionError}</p>}
