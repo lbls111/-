@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { StoryOutline, GeneratedChapter, StoryOptions, FinalDetailedOutline, PlotPointAnalysis, OutlineCritique, ScoringDimension, ImprovementSuggestion, OptimizationHistoryEntry, DetailedOutlineAnalysis } from '../types';
-import { generateChapterTitles, generateSingleOutlineIteration, refineOutlineWithTool } from '../services/geminiService';
+import { generateChapterTitles, generateSingleOutlineIteration, generateNarrativeToolboxSuggestions } from '../services/geminiService';
 import SparklesIcon from './icons/SparklesIcon';
 import LoadingSpinner from './icons/LoadingSpinner';
 import SendIcon from './icons/SendIcon';
@@ -21,6 +21,7 @@ interface OutlineGeneratorProps {
 }
 
 const AnalysisField: React.FC<{ label: string; value: any; color: string }> = ({ label, value, color }) => {
+    if (!value) return null;
     const displayValue = (typeof value === 'object' && value !== null) 
         ? JSON.stringify(value, null, 2) 
         : (value !== null && value !== undefined ? String(value) : '');
@@ -295,7 +296,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
     };
 
     const handleToolboxRequest = async (tool: 'iceberg' | 'conflict') => {
-        if (!parsedOutline || !activeOutlineTitle) {
+        if (!parsedOutline) {
             setToolboxError("无法使用工具，需要先生成一个有效的细纲。");
             return;
         }
@@ -303,39 +304,12 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
         setToolboxResult(null);
         setToolboxError(null);
         try {
-            const currentDetailedOutline: DetailedOutlineAnalysis = {
+            const detailedOutline: DetailedOutlineAnalysis = {
                 plotPoints: parsedOutline.plotPoints,
                 nextChapterPreview: parsedOutline.nextChapterPreview,
             };
-
-            const response = await refineOutlineWithTool(tool, currentDetailedOutline, storyOutline, storyOptions);
-            
-            const newVersion = parsedOutline.finalVersion + 1;
-
-            const newHistoryEntry: OptimizationHistoryEntry = {
-                version: newVersion,
-                critique: {
-                    thoughtProcess: `This version was refined using the '${tool === 'iceberg' ? 'Iceberg Principle' : 'Conflict Generation'}' tool.\n\n${response.explanation}`,
-                    overallScore: parsedOutline.optimizationHistory.slice(-1)[0]?.critique.overallScore || 8.0, // Carry over score
-                    scoringBreakdown: [],
-                    improvementSuggestions: [{
-                        area: `Tool: ${tool === 'iceberg' ? '信息载体 (冰山法则)' : '规则冲突'}`,
-                        suggestion: response.explanation
-                    }]
-                },
-                outline: response.refinedOutline
-            };
-
-            const finalResultForState: FinalDetailedOutline = {
-                ...response.refinedOutline,
-                finalVersion: newVersion,
-                optimizationHistory: [...parsedOutline.optimizationHistory, newHistoryEntry]
-            };
-
-            const resultString = `[START_DETAILED_OUTLINE_JSON]\n${JSON.stringify(finalResultForState, null, 2)}\n[END_DETAILED_OUTLINE_JSON]`;
-            setOutlineHistory(prev => ({ ...prev, [activeOutlineTitle]: resultString }));
-            setToolboxResult(response.explanation);
-
+            const response = await generateNarrativeToolboxSuggestions(tool, detailedOutline, storyOutline, storyOptions);
+            setToolboxResult(response.text);
         } catch (e: any) {
             setToolboxError(e.message || "获取建议时发生未知错误。");
         } finally {
@@ -459,11 +433,11 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                             <div className="md:col-span-2">
                                                 <AnalysisField label="逻辑夯实 (合理性与铺垫)" value={point.logicSolidification} color="text-green-400" />
                                             </div>
-                                             <div className="md:col-span-2">
-                                                <AnalysisField label="世界观揭示 (冰山法则)" value={point.worldviewReveal} color="text-lime-400" />
-                                            </div>
                                             <div className="md:col-span-2">
                                                 <AnalysisField label="情绪与互动强化 (冲突张力)" value={point.emotionAndInteraction} color="text-pink-400" />
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <AnalysisField label="世界观一瞥 (冰山法则)" value={point.worldviewGlimpse} color="text-gray-400" />
                                             </div>
                                         </div>
                                     </div>
@@ -496,7 +470,7 @@ const OutlineGenerator: React.FC<OutlineGeneratorProps> = ({
                                 </div>
                                 {toolboxResult && (
                                     <div className="mt-3 p-3 bg-indigo-950/30 border border-indigo-500/30 rounded-lg">
-                                        <h5 className="font-bold text-indigo-300 mb-2">AI 优化说明</h5>
+                                        <h5 className="font-bold text-indigo-300 mb-2">AI 创意启发</h5>
                                         <div className="text-slate-300 text-sm whitespace-pre-wrap prose prose-invert prose-sm prose-p:my-1.5" dangerouslySetInnerHTML={{ __html: toolboxResult.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-400">$1</strong>') }} />
                                     </div>
                                 )}

@@ -8,10 +8,10 @@ import {
   getNewCharacterProfilePrompts,
   getWorldbookSuggestionsPrompts,
   getCharacterArcSuggestionsPrompts,
-  getRefineOutlineWithToolPrompts,
+  getNarrativeToolboxPrompts,
 } from './prompts';
 
-import type { StoryOptions, Citation, DetailedOutlineAnalysis } from '../types';
+import type { StoryOptions, Citation } from '../types';
 
 interface PagesFunctionContext {
   request: Request;
@@ -173,8 +173,8 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
         switch (action) {
             case 'performSearch': case 'generateChapterTitles': 
             case 'editChapterText': case 'generateNewCharacterProfile':
-            case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions':
-            case 'generateSingleOutlineIteration': case 'refineOutlineWithTool':
+            case 'getWorldbookSuggestions': case 'getCharacterArcSuggestions': case 'getNarrativeToolboxSuggestions':
+            case 'generateSingleOutlineIteration':
                 isStreaming = false; break;
             case 'generateChapter': case 'generateCharacterInteraction':
                 isStreaming = true; break;
@@ -191,7 +191,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
             case 'generateNewCharacterProfile': model = options.planningModel; prompt = getNewCharacterProfilePrompts(restPayload.storyOutline, restPayload.characterPrompt, options); break;
             case 'getWorldbookSuggestions': model = options.planningModel; prompt = getWorldbookSuggestionsPrompts(restPayload.storyOutline, options); break;
             case 'getCharacterArcSuggestions': model = options.planningModel; prompt = getCharacterArcSuggestionsPrompts(restPayload.character, restPayload.storyOutline, options); break;
-            case 'refineOutlineWithTool': model = options.planningModel; prompt = getRefineOutlineWithToolPrompts(restPayload.tool, restPayload.detailedOutline, restPayload.storyOutline, options); break;
+            case 'getNarrativeToolboxSuggestions': model = options.planningModel; prompt = getNarrativeToolboxPrompts(restPayload.tool, restPayload.detailedOutline, restPayload.storyOutline, options); break;
         }
 
         if (!model) throw new Error(`No model selected for action: ${action}. Please check your settings.`);
@@ -210,15 +210,6 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                     const resultJson = JSON.parse(jsonText);
                     return new Response(JSON.stringify(resultJson), { headers: { 'Content-Type': 'application/json' } });
                 }
-                case 'refineOutlineWithTool': {
-                    const jsonText = extractJsonFromText(resultText);
-                    const explanationMarker = "### 优化说明";
-                    const explanationIndex = resultText.indexOf(explanationMarker);
-                    const explanation = explanationIndex !== -1 ? resultText.substring(explanationIndex + explanationMarker.length).trim() : "AI 未提供优化说明。";
-                    const refinedOutline = JSON.parse(jsonText) as DetailedOutlineAnalysis;
-                    responseBody = { refinedOutline, explanation };
-                    break;
-                }
                 case 'generateChapterTitles': {
                     const jsonText = extractJsonFromText(resultText);
                     responseBody = { titles: JSON.parse(jsonText) };
@@ -236,6 +227,7 @@ export const onRequestPost: (context: PagesFunctionContext) => Promise<Response>
                 case 'editChapterText':
                 case 'getWorldbookSuggestions':
                 case 'getCharacterArcSuggestions':
+                case 'getNarrativeToolboxSuggestions':
                     responseBody = { text: resultText };
                     break;
                 default:

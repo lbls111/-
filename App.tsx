@@ -331,12 +331,25 @@ const App: React.FC = () => {
         if (message.includes('The user aborted a request')) {
             // Reset the state of the step that was running
             setThoughtSteps(prev => prev.map(s => s.status === 'running' ? { ...s, status: 'pending' } : s));
-            setGameState(prev => (prev === GameState.PLANNING || prev === GameState.WRITING) ? GameState.INITIAL : prev);
+             // Revert from a loading state to a ready state to allow retry.
+            setGameState(prev => {
+                if (prev === GameState.PLANNING) return storyOutline ? GameState.PLANNING_COMPLETE : GameState.INITIAL;
+                if (prev === GameState.WRITING) return GameState.CHAPTER_COMPLETE;
+                return prev;
+            });
             return;
         }
+
         setError(message);
-        setGameState(GameState.ERROR);
         addLog(message, 'error');
+        
+        // Revert from a loading state to a ready state to allow manual retry
+        setGameState(prev => {
+            if (prev === GameState.PLANNING) return storyOutline ? GameState.PLANNING_COMPLETE : GameState.INITIAL;
+            if (prev === GameState.WRITING) return GameState.CHAPTER_COMPLETE;
+            return prev;
+        });
+
         if (stepId !== undefined) {
             setThoughtSteps(prev => prev.map(s => s.id === stepId ? { ...s, status: 'error' } : s));
         }
@@ -681,6 +694,7 @@ const App: React.FC = () => {
         if(!lastChapter || lastChapter.status !== 'complete') return;
         
         setIsEditing(true);
+        setError(null);
         addLog(`开始微调最新章节... 指令: ${editInput}`, 'info');
         const ac = new AbortController();
         setAbortController(ac);
@@ -694,8 +708,7 @@ const App: React.FC = () => {
             setEditInput('');
             addLog('文本微调成功。', 'success');
         } catch (e: any) {
-           setError(`文本修改失败: ${e.message}`);
-           addLog(`文本微调失败: ${e.message}`, 'error');
+           handleError(`文本修改失败: ${e.message}`);
         } finally {
             setIsEditing(false);
             setAbortController(null);
